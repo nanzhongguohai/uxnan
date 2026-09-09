@@ -50,8 +50,8 @@ import { commandBlock, editDiffBlock, toolBlock, writeDiffBlock } from './conten
 import { buildTitlePrompt, runTitleOneShot, sanitizeTitle } from '../agents/thread-title.js';
 import { defaultSpawn, type SpawnFn, type SpawnedProcess } from './spawn.js';
 
-/** Default idle timeout before closing an inactive `agy` process (24 hours). */
-export const DEFAULT_ANTIGRAVITY_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+/** Default idle timeout before closing an inactive `agy` process (2 hours). */
+export const DEFAULT_ANTIGRAVITY_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 /** Hard cap on the `agy models` spawn before giving up. */
 const MODEL_LIST_TIMEOUT_MS = 8000;
@@ -916,15 +916,20 @@ export class AntigravityAdapter extends BaseAgentAdapter {
 
   cancelTurn(threadId: string, turnId: string): Promise<void> {
     const session = this.#sessions.get(threadId);
-    if (session && session.activeTurn?.turnId === turnId) {
+    if (session) {
       if (session.transcriptTimer) {
         clearInterval(session.transcriptTimer);
         session.transcriptTimer = undefined;
       }
-      session.activeTurn.completed = true;
-      session.activeTurn = undefined;
-      this.emit({ type: 'turn_aborted', threadId, turnId });
+      const targetTurnId = session.activeTurn?.turnId ?? turnId;
+      if (session.activeTurn) {
+        session.activeTurn.completed = true;
+        session.activeTurn = undefined;
+      }
+      this.emit({ type: 'turn_aborted', threadId, turnId: targetTurnId });
       this.#teardownSession(threadId);
+    } else {
+      this.emit({ type: 'turn_aborted', threadId, turnId });
     }
     return Promise.resolve();
   }

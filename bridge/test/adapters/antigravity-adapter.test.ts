@@ -322,7 +322,7 @@ test('AntigravityAdapter capabilities reportsContextUsage is true', () => {
   const adapter = new AntigravityAdapter();
   assert.equal(adapter.capabilities.reportsContextUsage, true);
   assert.equal(adapter.idleTimeoutMs, DEFAULT_ANTIGRAVITY_IDLE_TIMEOUT_MS);
-  assert.equal(DEFAULT_ANTIGRAVITY_IDLE_TIMEOUT_MS, 24 * 60 * 60 * 1000);
+  assert.equal(DEFAULT_ANTIGRAVITY_IDLE_TIMEOUT_MS, 2 * 60 * 60 * 1000);
 });
 
 test('AntigravityAdapter closeSession tears down active persistent session immediately', async () => {

@@ -7,7 +7,7 @@
  * {@link SpawnExtra.stdin} — see the Claude adapter, which needs the pipe to
  * hand the agent a follow-up mid-turn.
  */
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 
 /**
  * Environment keys the **desktop ADE** injects into one terminal of one launch:
@@ -66,9 +66,108 @@ export interface SpawnedProcess {
    * ending it is what tells the CLI no more input is coming.
    */
   stdin?: NodeJS.WritableStream;
+  pid?: number;
   on(event: 'close', listener: (code: number | null) => void): unknown;
   on(event: 'error', listener: (err: Error) => void): unknown;
   kill(signal?: NodeJS.Signals): unknown;
+}
+
+/**
+ * Recursively terminates a process and all its descendant processes (process tree).
+ *
+ * Prevents spawned agent child processes (e.g. `ssh`, `docker run`, `python`, `bash`)
+ * from surviving as hung orphans when a session is torn down or aborted.
+ */
+export function killProcessTree(rootPid: number, signal: NodeJS.Signals = 'SIGTERM'): void {
+  if (!rootPid || rootPid <= 0) return;
+
+  if (process.platform === 'win32') {
+    try {
+      execSync(`taskkill /F /T /PID ${rootPid}`, { stdio: 'ignore' });
+    } catch {
+      try {
+        process.kill(rootPid, signal);
+      } catch {
+        /* already dead */
+      }
+    }
+    return;
+  }
+
+  // POSIX (Linux, macOS):
+  const allPids: number[] = [];
+
+  const collectPids = (parent: number) => {
+    try {
+      const out = execSync(`pgrep -P ${parent}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const children = out
+        .trim()
+        .split(/\s+/)
+        .map((s) => parseInt(s, 10))
+        .filter((p) => !isNaN(p) && p > 0 && p !== parent && !allPids.includes(p));
+
+      for (const child of children) {
+        collectPids(child);
+        allPids.push(child);
+      }
+    } catch {
+      /* pgrep exits 1 when no child found */
+    }
+  };
+
+  collectPids(rootPid);
+
+  // 1. Kill descendants first (leaves first)
+  for (const pid of allPids) {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 2. Kill process group in case it was detached
+  try {
+    process.kill(-rootPid, signal);
+  } catch {
+    /* ignore */
+  }
+
+  // 3. Kill root process
+  try {
+    process.kill(rootPid, signal);
+  } catch {
+    /* ignore */
+  }
+
+  // 4. Fallback escalation to SIGKILL if SIGTERM was used
+  if (signal === 'SIGTERM') {
+    const timer = setTimeout(() => {
+      for (const pid of allPids) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        process.kill(-rootPid, 'SIGKILL');
+      } catch {
+        /* ignore */
+      }
+      try {
+        process.kill(rootPid, 'SIGKILL');
+      } catch {
+        /* ignore */
+      }
+    }, 1500);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  }
 }
 
 /** Extra spawn options some adapters need (e.g. per-turn env for the approval hook). */
@@ -99,13 +198,20 @@ export const defaultSpawn: SpawnFn = (command, args, cwd, extra) => {
     stdio: [extra?.stdin === 'pipe' ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     windowsHide: true,
     shell: false,
+    detached: process.platform !== 'win32',
     // Always an explicit environment, never the implicit inherited one: that is
     // what keeps a terminal's identity from reaching the agent (`agentEnv`).
     env: agentEnv(extra?.env),
   });
-  // `stdio` is computed, so TypeScript widens the streams to `| null` even
-  // though 'pipe' guarantees stdout/stderr. The cast is the narrowing the
-  // literal tuple used to give for free; `stdin` stays optional on
-  // {@link SpawnedProcess} because it really is absent when not piped.
-  return child as unknown as SpawnedProcess;
+  const spawned = child as unknown as SpawnedProcess;
+  spawned.pid = child.pid;
+  spawned.kill = (signal?: NodeJS.Signals) => {
+    if (child.pid) {
+      killProcessTree(child.pid, signal ?? 'SIGTERM');
+    } else {
+      child.kill(signal);
+    }
+    return true;
+  };
+  return spawned;
 };

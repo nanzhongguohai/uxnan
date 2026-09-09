@@ -180,6 +180,7 @@ export { resolveGrokBinary, type ResolvedGrok } from './adapters/resolve-grok.js
 export {
   agentEnv,
   defaultSpawn,
+  killProcessTree,
   DESKTOP_TERMINAL_ENV_KEYS,
   type SpawnFn,
   type SpawnedProcess,

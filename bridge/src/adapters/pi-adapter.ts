@@ -54,8 +54,8 @@ import { effortValues, reasoningOption, reasoningValue } from './run-options.js'
 import { assistantResponseBoundaryBlock, compactionBlock } from './content-blocks.js';
 import { defaultSpawn, type SpawnFn, type SpawnedProcess } from './spawn.js';
 
-/** Default idle timeout before closing an inactive `pi` process (24 hours). */
-export const DEFAULT_PI_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+/** Default idle timeout before closing an inactive `pi` process (2 hours). */
+export const DEFAULT_PI_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 /** Hard cap on the `--list-models` spawn before giving up. */
 const MODEL_LIST_TIMEOUT_MS = 8000;
@@ -781,12 +781,17 @@ export class PiAdapter extends BaseAgentAdapter {
 
   cancelTurn(threadId: string, turnId: string): Promise<void> {
     const session = this.#sessions.get(threadId);
-    if (session && session.activeTurn?.turnId === turnId) {
+    if (session) {
       session.send({ type: 'abort' });
-      session.activeTurn.completed = true;
-      session.activeTurn = undefined;
-      this.emit({ type: 'turn_aborted', threadId, turnId });
+      const targetTurnId = session.activeTurn?.turnId ?? turnId;
+      if (session.activeTurn) {
+        session.activeTurn.completed = true;
+        session.activeTurn = undefined;
+      }
+      this.emit({ type: 'turn_aborted', threadId, turnId: targetTurnId });
       this.#teardownSession(threadId);
+    } else {
+      this.emit({ type: 'turn_aborted', threadId, turnId });
     }
     return Promise.resolve();
   }

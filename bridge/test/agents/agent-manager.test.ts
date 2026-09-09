@@ -868,7 +868,11 @@ baseTest('a terminal event that throws ends the turn instead of hanging it', asy
   adapter.complete(thread.id, turnId, 'partial');
 
   // It must reach a TERMINAL state — the whole point is that it does not hang.
-  await waitFor(async () => (await store.getTurn(turnId)).status === 'error');
+  await waitFor(
+    async () =>
+      (await store.getTurn(turnId)).status === 'error' &&
+      notifications.some((n) => n.method === StreamNotification.TurnError),
+  );
   const errorNote = notifications.find((n) => n.method === StreamNotification.TurnError);
   assert.ok(errorNote, 'the phone must be told the turn ended');
   assert.match(JSON.stringify(errorNote?.params ?? {}), /could not be finalized/);

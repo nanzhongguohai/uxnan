@@ -696,10 +696,10 @@ test('PiAdapter idleTimeoutMs tears down inactive persistent session', async () 
   assert.equal(proc.stdinEnded, true);
 });
 
-test('DEFAULT_PI_IDLE_TIMEOUT_MS defaults to 24 hours', () => {
-  assert.equal(DEFAULT_PI_IDLE_TIMEOUT_MS, 24 * 60 * 60 * 1000);
+test('DEFAULT_PI_IDLE_TIMEOUT_MS defaults to 2 hours', () => {
+  assert.equal(DEFAULT_PI_IDLE_TIMEOUT_MS, 2 * 60 * 60 * 1000);
   const adapter = new PiAdapter({ binaryPath: 'pi' });
-  assert.equal(adapter.idleTimeoutMs, 24 * 60 * 60 * 1000);
+  assert.equal(adapter.idleTimeoutMs, 2 * 60 * 60 * 1000);
 });
 
 test('PiAdapter closeSession tears down active persistent session immediately', async () => {

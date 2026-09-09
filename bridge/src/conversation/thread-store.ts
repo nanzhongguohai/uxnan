@@ -610,6 +610,31 @@ export class ThreadStore {
     });
   }
 
+  /**
+   * Marks every still-`streaming` or `pending` turn across all threads as `aborted`.
+   * Called once at startup: any in-flight turn being processed by an agent was
+   * killed when the previous bridge process exited. Leaving them `streaming`
+   * strands the UI in a permanent spinning/streaming state. Aborting them keeps
+   * the thread honest and unblocks follow-ups. Returns how many it closed.
+   */
+  async abortOrphanedRunningTurns(now: number): Promise<number> {
+    return this.#mutate(async (threads) => {
+      let aborted = 0;
+      const write: string[] = [];
+      for (const thread of threads) {
+        const before = aborted;
+        for (const turn of thread.turns) {
+          if (turn.status !== 'streaming' && turn.status !== 'pending') continue;
+          turn.status = 'aborted';
+          turn.completedAt = now;
+          aborted += 1;
+        }
+        if (aborted !== before) write.push(thread.id);
+      }
+      return { result: aborted, write };
+    });
+  }
+
   async #createTurn(
     threadId: string,
     userText: string,
@@ -772,6 +797,9 @@ export class ThreadStore {
   #setTurnStatus(threadId: string, turnId: string, status: TurnStatus, now: number): Promise<void> {
     return this.#mutateThread(threadId, async (threads) => {
       const turn = this.#turn(threads, threadId, turnId);
+      if (TERMINAL_TURN_STATUSES.has(turn.status) && TERMINAL_TURN_STATUSES.has(status)) {
+        return;
+      }
       turn.status = status;
       // Only a terminal status stamps `completedAt`. `beginQueuedTurn` moves a
       // turn from `queued` to `streaming` — it is starting, not ending, and
