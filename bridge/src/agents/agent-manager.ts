@@ -948,6 +948,50 @@ export class AgentManager {
     if (adapter) {
       await adapter.cancelTurn(threadId, turnId);
     }
+    // Safeguard: Ensure the turn is marked aborted in store and client is notified
+    // if the adapter did not emit it (or if it was a detached in-flight turn).
+    const active = this.#activeTurnByThread.get(threadId);
+    if (active === turnId) {
+      this.#activeTurnByThread.delete(threadId);
+      const now = this.#options.now();
+      await this.#options.store.abortTurn(threadId, turnId, now);
+      this.#options.notify(
+        makeNotification(StreamNotification.TurnAborted, { threadId, turnId }),
+      );
+      this.#assistantByTurn.delete(turnId);
+      void this.#cleanupAttachments(turnId);
+      this.#pauseQueue(threadId, 'turnAborted');
+    }
+  }
+
+  /**
+   * Release and dismantle any active persistent process/session and clear
+   * queued turns for [threadId] (called when a thread is deleted or archived).
+   */
+  async closeThreadSession(threadId: string): Promise<void> {
+    const activeTurnId = this.#activeTurnByThread.get(threadId);
+    if (activeTurnId) {
+      try {
+        await this.cancelTurn(threadId, activeTurnId);
+      } catch {
+        /* best-effort */
+      }
+    }
+    this.#queueByThread.delete(threadId);
+    this.#queuePausedByThread.delete(threadId);
+    this.#activeTurnByThread.delete(threadId);
+
+    for (const adapter of this.#adapters.values()) {
+      const closeFn = (adapter as { closeSession?: (id: string) => Promise<void> }).closeSession;
+      if (typeof closeFn === 'function') {
+        try {
+          await closeFn.call(adapter, threadId);
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+    this.#agentByThread.delete(threadId);
   }
 
   /**

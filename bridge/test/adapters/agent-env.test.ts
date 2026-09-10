@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { agentEnv, DESKTOP_TERMINAL_ENV_KEYS, defaultSpawn } from '../../src/index.js';
+import { agentEnv, DESKTOP_TERMINAL_ENV_KEYS, defaultSpawn, killProcessTree } from '../../src/index.js';
 
 // The desktop ADE hands each terminal an identity (`UXNAN_AGENT_ID` + its hook
 // server's coordinates). Environment variables are inherited by the whole
@@ -77,4 +77,49 @@ test('a spawned agent CLI cannot see the terminal identity the bridge inherited'
   } finally {
     delete process.env['UXNAN_AGENT_ID'];
   }
+});
+
+test('killProcessTree terminates parent and child process tree', async () => {
+  // Spawn a parent process that spawns a long-running child and prints the child PID
+  const script = `
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
+    process.stdout.write(String(child.pid) + '\\n');
+    setInterval(() => {}, 1000);
+  `;
+  const parent = defaultSpawn(process.execPath, ['-e', script], process.cwd());
+  assert.ok(parent.pid && parent.pid > 0);
+
+  const childPidStr = await new Promise<string>((resolve) => {
+    parent.stdout.once('data', (d: Buffer) => resolve(d.toString().trim()));
+  });
+  const childPid = parseInt(childPidStr, 10);
+  assert.ok(childPid > 0);
+
+  // Both should be alive
+  assert.doesNotThrow(() => process.kill(parent.pid!, 0));
+  assert.doesNotThrow(() => process.kill(childPid, 0));
+
+  // Kill the tree via killProcessTree
+  killProcessTree(parent.pid!);
+
+  // Give up to 1s for signals to process
+  await new Promise((r) => setTimeout(r, 200));
+
+  // Verify both processes are dead
+  let parentAlive = true;
+  let childAlive = true;
+  try {
+    process.kill(parent.pid!, 0);
+  } catch {
+    parentAlive = false;
+  }
+  try {
+    process.kill(childPid, 0);
+  } catch {
+    childAlive = false;
+  }
+
+  assert.equal(parentAlive, false, 'expected parent to be terminated');
+  assert.equal(childAlive, false, 'expected child process to be terminated by killProcessTree');
 });

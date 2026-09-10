@@ -384,6 +384,20 @@ test('queued turns left by a previous run are cancelled at startup', async () =>
   await h.cleanup();
 });
 
+test('streaming and pending turns left by a previous run are aborted at startup', async () => {
+  const h = await harness();
+  const first = await h.manager.sendTurn(h.threadId, 'first');
+  assert.equal((await h.store.getTurn(first.turnId)).status, 'streaming');
+
+  const aborted = await h.store.abortOrphanedRunningTurns(2000);
+  assert.equal(aborted, 1);
+  const turn = await h.store.getTurn(first.turnId);
+  assert.equal(turn.status, 'aborted');
+  assert.equal(turn.completedAt, 2000);
+
+  await h.cleanup();
+});
+
 test('a duplicate completion for the same turn does not drain the queue twice', async () => {
   // An adapter whose CLI outlives its own end-of-turn event can emit a second
   // `turn_completed` for the same turn — Claude Code does, when the model leaves

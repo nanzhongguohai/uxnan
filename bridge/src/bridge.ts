@@ -168,6 +168,12 @@ export async function startBridge(options: StartBridgeOptions = {}): Promise<Bri
       if (count > 0) logger.info(`cancelled ${count} queued turn(s) left by a previous run`);
     })
     .catch((err: unknown) => logger.warn(`failed to close orphaned queued turns: ${String(err)}`));
+  await threadStore
+    .abortOrphanedRunningTurns(now())
+    .then((count) => {
+      if (count > 0) logger.info(`aborted ${count} orphaned in-flight turn(s) left by a previous run`);
+    })
+    .catch((err: unknown) => logger.warn(`failed to close orphaned running turns: ${String(err)}`));
   // Single source of the pairing payload — shared by the QR and the manual-code
   // resolve endpoint, so both hand out identical pairing data.
   const buildPairingPayload = (): PairingPayload =>
@@ -318,7 +324,7 @@ export async function startBridge(options: StartBridgeOptions = {}): Promise<Bri
       ...(codexSettings.model !== undefined ? { defaultModel: codexSettings.model } : {}),
     },
   );
-  // pi: real agent driven via `pi -p --mode json` (see FOR-DEV.md).
+  // pi: real agent driven via persistent `pi --mode rpc` sessions (see FOR-DEV.md).
   const piSettings = config.agents['pi-agent'] ?? {};
   const pi = resolvePiBinary(piSettings.binaryPath);
   agentManager.register(
