@@ -244,6 +244,48 @@ void main() {
       expect(event.status, GitActionPhaseStatus.running);
     });
 
+    test('stream/thread/started carries the parsed thread', () {
+      final event = processor.classify(
+        note('stream/thread/started', {
+          'thread': {
+            'id': 'th-new',
+            'title': 'New Remote Thread',
+            'agentId': 'codex',
+            'status': 'active',
+          },
+        }),
+      );
+      expect(event, isA<ThreadStartedEvent>());
+      final started = event as ThreadStartedEvent;
+      expect(started.thread.id, 'th-new');
+      expect(started.thread.title, 'New Remote Thread');
+      expect(started.thread.agentId, 'codex');
+    });
+
+    test('stream/thread/deleted carries the deleted threadId', () {
+      final event = processor.classify(
+        note('stream/thread/deleted', {'threadId': 'th-del'}),
+      );
+      expect(event, isA<ThreadDeletedEvent>());
+      expect((event as ThreadDeletedEvent).threadId, 'th-del');
+    });
+
+    test('stream/thread/archived carries the threadId', () {
+      final event = processor.classify(
+        note('stream/thread/archived', {'threadId': 'th-arc'}),
+      );
+      expect(event, isA<ThreadArchivedEvent>());
+      expect((event as ThreadArchivedEvent).threadId, 'th-arc');
+    });
+
+    test('stream/thread/unarchived carries the threadId', () {
+      final event = processor.classify(
+        note('stream/thread/unarchived', {'threadId': 'th-unarc'}),
+      );
+      expect(event, isA<ThreadUnarchivedEvent>());
+      expect((event as ThreadUnarchivedEvent).threadId, 'th-unarc');
+    });
+
     test('unhandled stream methods become UnknownDomainEvent', () {
       final event = processor.classify(
         note('stream/plan/update', {'foo': 'bar'}),

@@ -66,4 +66,30 @@ void main() {
       expect(await store.readInterval(), UpdateCheckInterval.everyLaunch);
     });
   });
+
+  group('customUpdateUrl', () {
+    test('is null when never written', () async {
+      expect(await storeWith({}).readCustomUpdateUrl(), isNull);
+    });
+
+    test('round-trips a url', () async {
+      final store = storeWith({});
+      await store.writeCustomUpdateUrl('http://192.168.1.10:4040');
+      expect(
+        await store.readCustomUpdateUrl(),
+        'http://192.168.1.10:4040',
+      );
+    });
+
+    test('clears on a null or empty value', () async {
+      final store = storeWith({
+        'uxnan.updates.customUpdateUrl': 'http://192.168.1.10:4040',
+      });
+      await store.writeCustomUpdateUrl(null);
+      expect(await store.readCustomUpdateUrl(), isNull);
+      await store.writeCustomUpdateUrl('http://192.168.1.10:4040');
+      await store.writeCustomUpdateUrl('   ');
+      expect(await store.readCustomUpdateUrl(), isNull);
+    });
+  });
 }

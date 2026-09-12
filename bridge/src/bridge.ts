@@ -9,6 +9,7 @@
  */
 import { hostname } from 'node:os';
 import { join } from 'node:path';
+import { existsSync, statSync, readFileSync, createReadStream } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { makeNotification, type BridgeStatus, type PairingPayload } from '@uxnan/shared';
 import type { BridgeContext } from './bridge-context.js';
@@ -171,7 +172,8 @@ export async function startBridge(options: StartBridgeOptions = {}): Promise<Bri
   await threadStore
     .abortOrphanedRunningTurns(now())
     .then((count) => {
-      if (count > 0) logger.info(`aborted ${count} orphaned in-flight turn(s) left by a previous run`);
+      if (count > 0)
+        logger.info(`aborted ${count} orphaned in-flight turn(s) left by a previous run`);
     })
     .catch((err: unknown) => logger.warn(`failed to close orphaned running turns: ${String(err)}`));
   // Single source of the pairing payload — shared by the QR and the manual-code
@@ -653,6 +655,66 @@ export async function startBridge(options: StartBridgeOptions = {}): Promise<Bri
           const decision = await agentManager.requestApproval(threadId, { toolName, input });
           const hookDecision = decision === 'reject' ? 'deny' : 'allow';
           return { status: 200, json: { decision: hookDecision } };
+        },
+        onAppVersion: (_reqHost) => {
+          const candidatePaths = [
+            process.env['UXNAN_APK_PATH'],
+            '/data/github/uxnan/uxnanmobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk',
+            '/data/github/uxnan/uxnanmobile/build/app/outputs/flutter-apk/app-release.apk',
+          ].filter((p): p is string => Boolean(p));
+          const apkPath = candidatePaths.find((p) => existsSync(p)) || candidatePaths[0];
+          if (!apkPath || !existsSync(apkPath)) {
+            return { status: 404, json: { error: 'apk_not_found' } };
+          }
+          const stat = statSync(apkPath);
+          let version = '0.0.22-alpha.20260815';
+          let versionCode = 20260815;
+          const pubspecPath = '/data/github/uxnan/uxnanmobile/pubspec.yaml';
+          if (existsSync(pubspecPath)) {
+            const content = readFileSync(pubspecPath, 'utf8');
+            const match = content.match(/^version:\s*([0-9a-zA-Z.-]+)\+([0-9]+)/m);
+            if (match && match[1] && match[2]) {
+              version = match[1];
+              versionCode = parseInt(match[2], 10);
+            }
+          }
+          return {
+            status: 200,
+            json: {
+              version,
+              versionCode,
+              downloadUrl: '/app/download',
+              releaseNotes: 'Uxnan Mobile APK update available from host PC.',
+              sizeBytes: stat.size,
+              mtimeMs: stat.mtimeMs,
+            },
+          };
+        },
+        onAppDownload: (_req, res) => {
+          const candidatePaths = [
+            process.env['UXNAN_APK_PATH'],
+            '/data/github/uxnan/uxnanmobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk',
+            '/data/github/uxnan/uxnanmobile/build/app/outputs/flutter-apk/app-release.apk',
+          ].filter((p): p is string => Boolean(p));
+          const apkPath = candidatePaths.find((p) => existsSync(p)) || candidatePaths[0];
+          if (!apkPath || !existsSync(apkPath)) {
+            res.writeHead(404, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: 'apk_not_found' }));
+            return;
+          }
+          const stat = statSync(apkPath);
+          res.writeHead(200, {
+            'content-type': 'application/vnd.android.package-archive',
+            'content-length': stat.size,
+            'content-disposition': 'attachment; filename="uxnan.apk"',
+            'cache-control': 'no-cache',
+          });
+          if (_req.method === 'HEAD') {
+            res.end();
+            return;
+          }
+          const stream = createReadStream(apkPath);
+          stream.pipe(res);
         },
       });
       hookState.port = lanHandle.port;

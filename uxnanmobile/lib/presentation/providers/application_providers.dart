@@ -148,6 +148,39 @@ final networkKindProvider = Provider<NetworkKind>((ref) {
   return classifyEndpoint(endpoint, relayUrl: device.relayUrl);
 });
 
+/// Candidate host:port addresses of the active PC bridge (or previously
+/// paired trusted devices) to query for app updates (`/app/version`).
+final activeBridgeHostsProvider = Provider<List<String>?>((ref) {
+  final hosts = <String>{};
+
+  // 1. Currently active connected endpoint
+  final liveEndpoint = ref.watch(connectedEndpointProvider).value;
+  if (liveEndpoint != null && liveEndpoint.isNotEmpty) {
+    final uri = Uri.tryParse(liveEndpoint);
+    if (uri != null && uri.host.isNotEmpty) {
+      hosts.add(uri.hasPort ? '${uri.host}:${uri.port}' : uri.host);
+    } else {
+      hosts.add(liveEndpoint);
+    }
+  }
+
+  // 2. Currently connected device direct hosts
+  final connectedDevice = ref.watch(connectedDeviceProvider).value;
+  if (connectedDevice != null && connectedDevice.hosts.isNotEmpty) {
+    hosts.addAll(connectedDevice.hosts);
+  }
+
+  // 3. Fallback to trusted paired devices (cold start / offline)
+  final trusted = ref.watch(trustedDevicesProvider).value;
+  if (trusted != null && trusted.isNotEmpty) {
+    for (final device in trusted) {
+      hosts.addAll(device.hosts);
+    }
+  }
+
+  return hosts.isEmpty ? null : hosts.toList();
+});
+
 /// The connected bridge's status (`bridge/status`), re-read on every
 /// (re)connect. Null while not connected or against an older bridge —
 /// short-circuits before touching the session when offline. Drives the
@@ -731,6 +764,8 @@ final threadManagerProvider = Provider<ThreadManager>((ref) {
     connectionPhases: coordinator.connectionPhaseStream,
     // A reply in a thread the user isn't viewing is marked unread.
     foregroundThreadId: () => ref.read(foregroundThreadProvider),
+    connectedDeviceId: () =>
+        ref.read(connectedDeviceProvider).value?.macDeviceId,
   );
   ref.onDispose(manager.dispose);
   return manager;

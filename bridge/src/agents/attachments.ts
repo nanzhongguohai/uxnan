@@ -32,7 +32,7 @@ import type { TurnAttachment } from '@uxnan/shared';
 /** Sub-directory (under the thread cwd) the bridge drops turn attachments into. */
 export const ATTACHMENTS_DIRNAME = '.uxnan-attachments';
 
-/** Extension for a known image MIME type (no leading dot). */
+/** Extension for a known MIME type (no leading dot). */
 function extensionFor(mimeType: string): string {
   switch (mimeType.toLowerCase()) {
     case 'image/png':
@@ -48,9 +48,35 @@ function extensionFor(mimeType: string): string {
       return 'heic';
     case 'image/bmp':
       return 'bmp';
+    case 'text/plain':
+    case 'text/x-log':
+      return 'txt';
+    case 'text/markdown':
+      return 'md';
+    case 'application/json':
+    case 'text/json':
+      return 'json';
+    case 'application/pdf':
+      return 'pdf';
+    case 'text/html':
+      return 'html';
+    case 'text/csv':
+      return 'csv';
+    case 'text/xml':
+    case 'application/xml':
+      return 'xml';
+    case 'application/zip':
+      return 'zip';
     default:
       return 'bin';
   }
+}
+
+/** Sanitize a filename preserving dots/dashes, stripping directory traversal. */
+function sanitizeFilename(name: string): string {
+  const base = name.split(/[/\\]/).pop() || '';
+  const clean = base.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return clean || 'attachment';
 }
 
 export interface MaterializedAttachments {
@@ -115,7 +141,15 @@ export async function materializeAttachments(
       await mkdir(dir, { recursive: true });
       madeDir = true;
     }
-    const file = join(dir, `image-${i}.${extensionFor(att.mimeType ?? 'image/png')}`);
+    let filename: string;
+    if (att.fileName) {
+      filename = sanitizeFilename(att.fileName);
+    } else if (att.type === 'file') {
+      filename = `file-${i}.${extensionFor(att.mimeType ?? 'application/octet-stream')}`;
+    } else {
+      filename = `image-${i}.${extensionFor(att.mimeType ?? 'image/png')}`;
+    }
+    const file = join(dir, filename);
     try {
       await writeFile(file, bytes);
       paths.push(file);
@@ -126,9 +160,22 @@ export async function materializeAttachments(
   }
 
   if (paths.length === 0) return { paths: [], note: '' };
-  const label = paths.length > 1 ? 'images' : 'image';
+  const hasFiles = attachments.some(
+    (a) =>
+      a.type === 'file' || (a.fileName && !a.fileName.match(/\.(png|jpe?g|webp|gif|bmp|heic)$/i)),
+  );
+  const label = hasFiles
+    ? paths.length > 1
+      ? 'files'
+      : 'file'
+    : paths.length > 1
+      ? 'images'
+      : 'image';
+  const action = hasFiles
+    ? 'inspect/read with your file tools'
+    : 'open with your file/vision tools';
   const list = refs.map((p) => `- ${p}`).join('\n');
-  const note = `[Attached ${label} (open with your file/vision tools):\n${list}\n]`;
+  const note = `[Attached ${label} (${action}):\n${list}\n]`;
   return { paths, ...(madeDir ? { dir } : {}), note };
 }
 

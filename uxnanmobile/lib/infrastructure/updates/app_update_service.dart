@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:in_app_update_flutter/in_app_update_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -36,6 +37,19 @@ typedef IosPresent = Future<void> Function(String appStoreId);
 /// launched.
 typedef UrlOpener = Future<bool> Function(Uri url);
 
+/// Fetches JSON metadata from a custom or Bridge update URL.
+typedef DirectApkLookup = Future<Map<String, dynamic>?> Function(String url);
+
+/// Downloads an APK from [url] to [targetPath], streaming [AppInstallProgress].
+typedef DirectApkDownloader = Stream<AppInstallProgress> Function(
+  String url,
+  String targetPath, {
+  CancelToken? cancelToken,
+});
+
+/// Invokes the platform package installer for [targetPath].
+typedef DirectApkInstaller = Future<String?> Function(String targetPath);
+
 /// Checks for, downloads and installs application updates.
 ///
 /// Wraps `in_app_update_flutter`: on Android it drives the **Play In-App
@@ -64,6 +78,9 @@ class AppUpdateService {
     IosStoreLookup? iosLookup,
     IosPresent? iosPresent,
     UrlOpener? urlOpener,
+    DirectApkLookup? directLookup,
+    DirectApkDownloader? directDownloader,
+    DirectApkInstaller? directInstaller,
     TargetPlatform? platformOverride,
     bool? isWebOverride,
   })  : _packageInfoLoader = packageInfoLoader ?? PackageInfo.fromPlatform,
@@ -79,6 +96,9 @@ class AppUpdateService {
             ((id) => InAppUpdateFlutter().showUpdateForIos(appStoreId: id)),
         _urlOpener = urlOpener ??
             ((uri) => launchUrl(uri, mode: LaunchMode.externalApplication)),
+        _directLookup = directLookup ?? _defaultDirectLookup,
+        _directDownloader = directDownloader ?? _defaultDirectDownloader,
+        _directInstaller = directInstaller ?? _defaultDirectInstaller,
         _platformOverride = platformOverride,
         _isWebOverride = isWebOverride;
 
@@ -90,6 +110,9 @@ class AppUpdateService {
   final IosStoreLookup _iosLookup;
   final IosPresent _iosPresent;
   final UrlOpener _urlOpener;
+  final DirectApkLookup _directLookup;
+  final DirectApkDownloader _directDownloader;
+  final DirectApkInstaller _directInstaller;
   final TargetPlatform? _platformOverride;
   final bool? _isWebOverride;
 
@@ -111,6 +134,84 @@ class AppUpdateService {
     }
   }
 
+  static Future<Map<String, dynamic>?> _defaultDirectLookup(String url) async {
+    try {
+      final response = await Dio().get<Map<String, dynamic>>(
+        url,
+        options: Options(
+          responseType: ResponseType.json,
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+        ),
+      );
+      return response.data;
+    } on Object catch (error, stackTrace) {
+      AppLogger.warn('Direct update check failed at $url', error, stackTrace);
+      return null;
+    }
+  }
+
+  static Stream<AppInstallProgress> _defaultDirectDownloader(
+    String url,
+    String targetPath, {
+    CancelToken? cancelToken,
+  }) async* {
+    yield const AppInstallProgress(
+      stage: AppInstallStage.downloading,
+      fraction: 0,
+    );
+    final controller = StreamController<AppInstallProgress>();
+    unawaited(
+      () async {
+        try {
+          await Dio().download(
+            url,
+            targetPath,
+            cancelToken: cancelToken,
+            onReceiveProgress: (received, total) {
+              if (total > 0) {
+                controller.add(
+                  AppInstallProgress(
+                    stage: AppInstallStage.downloading,
+                    fraction: received / total,
+                  ),
+                );
+              }
+            },
+          );
+          controller.add(
+            const AppInstallProgress(
+              stage: AppInstallStage.downloaded,
+              fraction: 1,
+            ),
+          );
+          unawaited(controller.close());
+        } on Object catch (error, stackTrace) {
+          AppLogger.warn('Direct APK download error', error, stackTrace);
+          controller.add(
+            const AppInstallProgress(stage: AppInstallStage.failed),
+          );
+          unawaited(controller.close());
+        }
+      }(),
+    );
+    yield* controller.stream;
+  }
+
+  static Future<String?> _defaultDirectInstaller(String targetPath) async {
+    try {
+      const channel = MethodChannel('dev.luisgamas.uxnanmobile/installer');
+      final result = await channel.invokeMethod<bool>('installApk', {
+        'filePath': targetPath,
+      });
+      return (result ?? false) ? null : 'Installation failed to start.';
+    } on PlatformException catch (e) {
+      return e.message ?? e.toString();
+    } on Object catch (e) {
+      return e.toString();
+    }
+  }
+
   /// The update channel that applies on the current platform.
   UpdateChannel get channel {
     if (_isWeb) return UpdateChannel.unsupported;
@@ -124,23 +225,97 @@ class AppUpdateService {
   /// Checks whether a newer version is available. Never throws — any failure
   /// yields an [AppUpdateStatus.none] for the current [channel].
   ///
-  /// [iosRegionCode] is accepted for API compatibility; the iTunes
-  /// `bundleId` lookup already resolves the correct storefront, so it is
-  /// unused by the default implementation.
-  Future<AppUpdateStatus> check({String? iosRegionCode}) async {
-    final channel = this.channel;
+  /// Priority:
+  /// 1. Custom update server URL, when configured.
+  /// 2. Connected Bridge hosts (direct LAN /app/version), when reachable.
+  /// 3. Standard platform store checks (Google Play / App Store).
+  Future<AppUpdateStatus> check({
+    String? iosRegionCode,
+    String? customUrl,
+    List<String>? bridgeHosts,
+  }) async {
     try {
+      if (customUrl != null && customUrl.trim().isNotEmpty) {
+        final direct = await _checkDirect(customUrl.trim());
+        if (direct != null) return direct;
+      }
+
+      if (bridgeHosts != null && bridgeHosts.isNotEmpty) {
+        for (final host in bridgeHosts) {
+          final url = host.startsWith('http://') || host.startsWith('https://')
+              ? '$host/app/version'
+              : 'http://$host/app/version';
+          final direct = await _checkDirect(url);
+          if (direct != null) return direct;
+        }
+      }
+
+      final channel = this.channel;
       switch (channel) {
         case UpdateChannel.playStore:
           return await _checkAndroid();
         case UpdateChannel.appStore:
           return await _checkIos();
+        case UpdateChannel.directApk:
         case UpdateChannel.unsupported:
           return const AppUpdateStatus.none(UpdateChannel.unsupported);
       }
     } on Object catch (error, stackTrace) {
       AppLogger.warn('Update check failed', error, stackTrace);
       return AppUpdateStatus.none(channel);
+    }
+  }
+
+  Future<AppUpdateStatus?> _checkDirect(String url) async {
+    try {
+      final body = await _directLookup(url);
+      if (body == null) return null;
+      final remoteVersion = body['version']?.toString();
+      final remoteBuildCode =
+          int.tryParse(body['versionCode']?.toString() ?? '');
+      var downloadUrl = body['downloadUrl']?.toString();
+      final releaseNotes = body['releaseNotes']?.toString();
+      final fileSizeBytes = int.tryParse(
+        (body['fileSize'] ?? body['sizeBytes'])?.toString() ?? '',
+      );
+
+      final info = await _packageInfoLoader();
+      final localVersion = info.version.isEmpty ? null : info.version;
+      final localBuildCode = int.tryParse(info.buildNumber);
+
+      var available = false;
+      if (remoteBuildCode != null && localBuildCode != null) {
+        available = remoteBuildCode > localBuildCode;
+      }
+      if (!available && remoteVersion != null && localVersion != null) {
+        available = _isNewer(remoteVersion, localVersion);
+      }
+
+      if (downloadUrl != null &&
+          !downloadUrl.startsWith('http://') &&
+          !downloadUrl.startsWith('https://')) {
+        final base = Uri.tryParse(url);
+        if (base != null) {
+          downloadUrl = base.resolve(downloadUrl).toString();
+        }
+      }
+
+      final storeVersion = remoteVersion ??
+          (remoteBuildCode != null ? '$remoteBuildCode' : null);
+
+      return AppUpdateStatus(
+        channel: UpdateChannel.directApk,
+        updateAvailable: available,
+        localVersion: localVersion,
+        storeVersion: storeVersion,
+        storeUrl: downloadUrl,
+        releaseNotes: releaseNotes,
+        flexibleAllowed: true,
+        fileSizeBytes: fileSizeBytes,
+      );
+    } on Object catch (e, st) {
+      AppLogger.warn('Direct APK check failed', e, st);
+      return null;
     }
   }
 
@@ -337,4 +512,16 @@ class AppUpdateService {
       AppLogger.warn('Failed to present the store', error, stackTrace);
     }
   }
+
+  /// Downloads an APK from [url] to [targetPath], streaming download progress.
+  Stream<AppInstallProgress> downloadDirectApk({
+    required String url,
+    required String targetPath,
+    CancelToken? cancelToken,
+  }) =>
+      _directDownloader(url, targetPath, cancelToken: cancelToken);
+
+  /// Triggers native Android APK package installer for [targetPath].
+  Future<String?> installDirectApk(String targetPath) =>
+      _directInstaller(targetPath);
 }

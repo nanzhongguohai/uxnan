@@ -55,6 +55,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        ndk {
+            // Target 64-bit ARM devices only (arm64-v8a) to reduce APK size.
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     signingConfigs {
@@ -90,11 +95,24 @@ android {
             // FOR-DEV: if a new reflective dep breaks only in --release, add its
             // keep rule to proguard-rules.pro (debug doesn't minify). Always
             // re-test a QR scan + a background push in --release before shipping.
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Minification/obfuscation and resource shrinking disabled to speed up
+            // packaging; package size is minimized via 64-bit ARM abiFilters instead.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
+            )
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // Target 64-bit ARM devices only (exclude 32-bit and x86 architectures).
+            excludes += listOf(
+                "lib/armeabi-v7a/**",
+                "lib/x86/**",
+                "lib/x86_64/**",
             )
         }
     }

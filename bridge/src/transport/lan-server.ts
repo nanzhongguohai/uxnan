@@ -24,6 +24,12 @@ export interface HookApprovalResult {
   json: unknown;
 }
 
+/** Result of an app-version lookup: an HTTP status + JSON body. */
+export interface AppVersionResult {
+  status: number;
+  json: unknown;
+}
+
 export interface LanServerOptions {
   port: number;
   host?: string;
@@ -40,6 +46,16 @@ export interface LanServerOptions {
    * header, resolves once the user answers on the phone. Omitted → 404.
    */
   onHookApproval?: (body: unknown, token: string | undefined) => Promise<HookApprovalResult>;
+  /**
+   * Optional handler for `GET /app/version` (mobile app version check).
+   * Returns HTTP status and JSON metadata. Omitted → 404.
+   */
+  onAppVersion?: (reqHost: string) => AppVersionResult;
+  /**
+   * Optional handler for `GET /app/download` (mobile APK download).
+   * Streams the APK file to the client. Omitted → 404.
+   */
+  onAppDownload?: (req: IncomingMessage, res: ServerResponse) => void;
 }
 
 export interface LanServerHandle {
@@ -105,6 +121,34 @@ function handleHttp(req: IncomingMessage, res: ServerResponse, options: LanServe
       .catch(() => send(400, { error: 'read_error' }));
     return;
   }
+
+  // GET / HEAD /app/version — returns mobile app version metadata
+  if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/app/version') {
+    if (!options.onAppVersion) {
+      send(404, { error: 'app_version_disabled' });
+      return;
+    }
+    const host = typeof req.headers.host === 'string' ? req.headers.host : 'localhost';
+    const result = options.onAppVersion(host);
+    if (req.method === 'HEAD') {
+      res.writeHead(result.status, { 'content-type': 'application/json' });
+      res.end();
+      return;
+    }
+    send(result.status, result.json);
+    return;
+  }
+
+  // GET / HEAD /app/download — streams mobile APK file
+  if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/app/download') {
+    if (!options.onAppDownload) {
+      send(404, { error: 'app_download_disabled' });
+      return;
+    }
+    options.onAppDownload(req, res);
+    return;
+  }
+
   if (req.method !== 'GET' || url.pathname !== '/pair/resolve') {
     send(404, { error: 'not_found' });
     return;

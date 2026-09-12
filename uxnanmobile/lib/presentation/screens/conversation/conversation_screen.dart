@@ -149,9 +149,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   /// scroll.
   bool _restoredScroll = false;
 
-  /// Images the user attached for the next turn (shown as removable thumbnails
-  /// inside the composer, above the text field); cleared on send.
-  final List<ImageContent> _attachments = [];
+  /// Attachments the user picked for the next turn (shown as removable
+  /// thumbnails / chips inside the composer, above the text field); cleared
+  /// on send.
+  final List<MessageContent> _attachments = [];
 
   // Captured in initState: using `ref` inside dispose() is unreliable in
   // Riverpod (the clear could be dropped, leaving this thread marked as
@@ -625,9 +626,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     );
   }
 
-  /// Picks images from [source] and appends them to the pending attachments.
-  /// The gallery allows a multi-selection; the queue is capped at
-  /// [_maxAttachments] because every image rides inline on the turn.
+  /// Picks attachments from [source] and appends them to the pending
+  /// attachments. The queue is capped at [_maxAttachments] because every
+  /// attachment rides inline on the turn.
   Future<void> _pickAttachment(AttachmentSource source) async {
     final messenger = ScaffoldMessenger.of(context);
     final l10n = AppLocalizations.of(context);
@@ -640,11 +641,19 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
         );
       return;
     }
-    final picked = await ref
-        .read(attachmentPickerServiceProvider)
-        .pickImages(source, limit: free);
+    final service = ref.read(attachmentPickerServiceProvider);
+    final picked = <MessageContent>[
+      if (source == AttachmentSource.file)
+        ...await service.pickFiles(limit: free)
+      else
+        ...await service.pickImages(source, limit: free),
+    ];
     if (!mounted || picked.isEmpty) return;
-    final usable = picked.where((i) => i.base64Data != null).toList();
+    final usable = picked.where((i) {
+      if (i is ImageContent) return i.base64Data != null;
+      if (i is FileContent) return i.base64Data != null;
+      return false;
+    }).toList();
     if (usable.isEmpty) {
       messenger
         ..clearSnackBars()
@@ -1282,7 +1291,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
                         }
                         final options =
                             ref.read(threadRunOptionsProvider(widget.threadId));
-                        final attachments = List<ImageContent>.of(_attachments);
+                        final attachments =
+                            List<MessageContent>.of(_attachments);
                         // Route `/name args` for an advertised agent command as a
                         // real command (turn/send `command`); anything else is
                         // sent verbatim as text.

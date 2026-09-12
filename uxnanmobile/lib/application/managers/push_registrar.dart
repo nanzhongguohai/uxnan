@@ -206,6 +206,10 @@ class PushRegistrar {
             TurnAbortedEvent() ||
             TurnCancelledEvent() ||
             ThreadRenamedEvent() ||
+            ThreadStartedEvent() ||
+            ThreadDeletedEvent() ||
+            ThreadArchivedEvent() ||
+            ThreadUnarchivedEvent() ||
             TurnDeliveredEvent() ||
             QueueUpdatedEvent() ||
             ModelResolvedEvent() ||

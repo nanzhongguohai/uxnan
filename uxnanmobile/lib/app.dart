@@ -11,6 +11,7 @@ import 'package:uxnan/presentation/providers/infrastructure_providers.dart';
 import 'package:uxnan/presentation/providers/update_providers.dart';
 import 'package:uxnan/presentation/router/app_router.dart';
 import 'package:uxnan/presentation/theme/uxnan_theme.dart';
+import 'package:uxnan/presentation/widgets/app_update_dialog.dart';
 import 'package:uxnan/presentation/widgets/uxnan_splash.dart';
 
 /// Root widget of the Uxnan app.
@@ -223,6 +224,32 @@ class _PushHostState extends ConsumerState<_PushHost>
     // user has not opened Profile yet.
     ref.watch(metricsSnapshotsProvider);
     final l10n = AppLocalizations.of(context);
+    ref
+      ..listen<AsyncValue<String?>>(
+        connectedEndpointProvider,
+        (prev, next) {
+          final previousUrl = prev?.value;
+          final currentUrl = next.value;
+          if (currentUrl != null &&
+              currentUrl.isNotEmpty &&
+              currentUrl != previousUrl) {
+            unawaited(ref.read(appUpdateControllerProvider.notifier).check());
+          }
+        },
+      )
+      ..listen<bool>(
+        appUpdateControllerProvider.select((s) => s.dialogVisible),
+        (prev, next) {
+          if (next) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final navContext = shellNavigatorKey.currentContext;
+              if (navContext != null && navContext.mounted) {
+                AppUpdateDialog.show(navContext);
+              }
+            });
+          }
+        },
+      );
     registrar.strings = PushNotificationStrings(
       turnCompletedBody: l10n.pushTurnCompletedBody,
       turnErrorBody: l10n.pushTurnErrorBody,

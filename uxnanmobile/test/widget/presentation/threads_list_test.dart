@@ -142,10 +142,37 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Rename'), findsOneWidget);
+    expect(find.text('New with same config'), findsOneWidget);
     expect(find.text('Copy thread ID'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     // The sheet header shows the thread id for reference.
     expect(find.text('th-9'), findsOneWidget);
+  });
+
+  testWidgets(
+      'swiping left on a thread reveals delete and prompts confirmation',
+      (tester) async {
+    await tester.pumpWidget(
+      _wrap(threads: [_thread('th-swipe', 'Swipe to delete test', 'codex')]),
+    );
+    await tester.pump();
+
+    expect(find.text('Swipe to delete test'), findsOneWidget);
+
+    // Swipe left on the thread row
+    await tester.drag(find.text('Swipe to delete test'), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+
+    // Confirmation dialog appears
+    expect(find.text('Delete thread?'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Delete'), findsOneWidget);
+
+    // Cancel dismisses the dialog and keeps the row
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Swipe to delete test'), findsOneWidget);
   });
 
   testWidgets('a row reads state, then who, then what', (tester) async {

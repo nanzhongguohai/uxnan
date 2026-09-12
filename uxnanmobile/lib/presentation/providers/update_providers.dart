@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uxnan/domain/enums/update_check_interval.dart';
 import 'package:uxnan/domain/value_objects/app_update_status.dart';
 import 'package:uxnan/infrastructure/storage/update_preferences_store.dart';
@@ -45,6 +46,9 @@ class AppUpdateState extends Equatable {
     this.errorMessage,
     this.interval = UpdateCheckInterval.defaultInterval,
     this.starting = false,
+    this.customUpdateUrl,
+    this.dialogDismissedVersion,
+    this.downloadedFilePath,
   });
 
   /// The initial, nothing-checked-yet state.
@@ -55,7 +59,10 @@ class AppUpdateState extends Equatable {
         dismissedVersion = null,
         errorMessage = null,
         interval = UpdateCheckInterval.defaultInterval,
-        starting = false;
+        starting = false,
+        customUpdateUrl = null,
+        dialogDismissedVersion = null,
+        downloadedFilePath = null;
 
   /// The current lifecycle phase.
   final AppUpdatePhase phase;
@@ -77,6 +84,15 @@ class AppUpdateState extends Equatable {
 
   /// Whether an update launch is currently in flight.
   final bool starting;
+
+  /// The custom update check server URL configured by the user, if any.
+  final String? customUpdateUrl;
+
+  /// The store version whose popup dialog was dismissed in this session.
+  final String? dialogDismissedVersion;
+
+  /// The local file path where the APK was downloaded (direct APK flow).
+  final String? downloadedFilePath;
 
   /// Whether a newer version is available (available, or already
   /// downloading/downloaded/installing an accepted update).
@@ -105,6 +121,15 @@ class AppUpdateState extends Equatable {
     return version == null || version != dismissedVersion;
   }
 
+  /// Whether the update prompt dialog should be presented.
+  bool get dialogVisible {
+    if (!hasUpdate) return false;
+    if (phase != AppUpdatePhase.available) return false;
+    final version = status?.storeVersion;
+    if (version == null) return false;
+    return version != dismissedVersion && version != dialogDismissedVersion;
+  }
+
   /// Returns a copy with the given fields overridden. [clearError] drops the
   /// error message regardless of [errorMessage]; [clearInstall] drops the
   /// install progress.
@@ -116,8 +141,13 @@ class AppUpdateState extends Equatable {
     String? errorMessage,
     UpdateCheckInterval? interval,
     bool? starting,
+    String? customUpdateUrl,
+    String? dialogDismissedVersion,
+    String? downloadedFilePath,
     bool clearError = false,
     bool clearInstall = false,
+    bool clearCustomUpdateUrl = false,
+    bool clearDownloadedFilePath = false,
   }) =>
       AppUpdateState(
         phase: phase ?? this.phase,
@@ -127,6 +157,14 @@ class AppUpdateState extends Equatable {
         errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
         interval: interval ?? this.interval,
         starting: starting ?? this.starting,
+        customUpdateUrl: clearCustomUpdateUrl
+            ? null
+            : (customUpdateUrl ?? this.customUpdateUrl),
+        dialogDismissedVersion:
+            dialogDismissedVersion ?? this.dialogDismissedVersion,
+        downloadedFilePath: clearDownloadedFilePath
+            ? null
+            : (downloadedFilePath ?? this.downloadedFilePath),
       );
 
   @override
@@ -138,6 +176,9 @@ class AppUpdateState extends Equatable {
         errorMessage,
         interval,
         starting,
+        customUpdateUrl,
+        dialogDismissedVersion,
+        downloadedFilePath,
       ];
 }
 
@@ -162,10 +203,11 @@ class AppUpdateController extends Notifier<AppUpdateState> {
   }
 
   Future<void> _loadInterval() async {
-    final interval =
-        await ref.read(updatePreferencesStoreProvider).readInterval();
-    if (!ref.mounted || state.interval == interval) return;
-    state = state.copyWith(interval: interval);
+    final store = ref.read(updatePreferencesStoreProvider);
+    final interval = await store.readInterval();
+    final customUrl = await store.readCustomUpdateUrl();
+    if (!ref.mounted) return;
+    state = state.copyWith(interval: interval, customUpdateUrl: customUrl);
   }
 
   /// Runs an automatic check only when the chosen interval's gap has elapsed
@@ -174,14 +216,17 @@ class AppUpdateController extends Notifier<AppUpdateState> {
   ///
   /// An update that was already started bypasses the throttle entirely — see
   /// [_hasPendingUpdate].
-  Future<void> maybeCheck() async {
+  Future<void> maybeCheck({
+    String? customUrl,
+    List<String>? bridgeHosts,
+  }) async {
     final store = ref.read(updatePreferencesStoreProvider);
     final interval = await store.readInterval();
     if (ref.mounted && state.interval != interval) {
       state = state.copyWith(interval: interval);
     }
     if (await _hasPendingUpdate(store)) {
-      await check();
+      await check(customUrl: customUrl, bridgeHosts: bridgeHosts);
       return;
     }
     final gap = interval.minGap;
@@ -189,7 +234,7 @@ class AppUpdateController extends Notifier<AppUpdateState> {
       final last = await store.readLastCheck();
       if (last != null && DateTime.now().difference(last) < gap) return;
     }
-    await check();
+    await check(customUrl: customUrl, bridgeHosts: bridgeHosts);
   }
 
   /// Whether an update this app already started may still be waiting in the
@@ -220,12 +265,19 @@ class AppUpdateController extends Notifier<AppUpdateState> {
   /// Doubles as the *resume* path for an update already in flight: Play, not
   /// this app, owns a flexible download, so a check re-reads its real stage and
   /// picks the flow back up wherever it actually is (see [_phaseFor]).
-  Future<void> check() async {
+  Future<void> check({String? customUrl, List<String>? bridgeHosts}) async {
     if (state.phase == AppUpdatePhase.checking) return;
     state = state.copyWith(phase: AppUpdatePhase.checking, clearError: true);
 
-    final result = await ref.read(appUpdateServiceProvider).check();
     final store = ref.read(updatePreferencesStoreProvider);
+    final effectiveCustomUrl = customUrl ?? await store.readCustomUpdateUrl();
+    final effectiveHosts =
+        bridgeHosts ?? ref.read(connectedBridgeHostsProvider);
+
+    final result = await ref.read(appUpdateServiceProvider).check(
+          customUrl: effectiveCustomUrl,
+          bridgeHosts: effectiveHosts,
+        );
     await store.writeLastCheck(DateTime.now());
     final dismissed = await store.readDismissedVersion();
 
@@ -247,6 +299,7 @@ class AppUpdateController extends Notifier<AppUpdateState> {
       phase: phase,
       status: result,
       dismissedVersion: dismissed,
+      customUpdateUrl: effectiveCustomUrl,
       clearError: true,
       // Keep the download percentage across a mid-download re-check; anything
       // else starts from Play's own stage with no stale progress attached.
@@ -288,6 +341,23 @@ class AppUpdateController extends Notifier<AppUpdateState> {
         .writeDismissedVersion(version);
     if (!ref.mounted) return;
     state = state.copyWith(dismissedVersion: version);
+  }
+
+  /// Dismisses the update dialog for the current store version in this session.
+  void dismissDialog() {
+    final version = state.status?.storeVersion;
+    if (version == null) return;
+    state = state.copyWith(dialogDismissedVersion: version);
+  }
+
+  /// Persists and applies a custom update server URL.
+  Future<void> setCustomUpdateUrl(String? url) async {
+    await ref.read(updatePreferencesStoreProvider).writeCustomUpdateUrl(url);
+    if (!ref.mounted) return;
+    state = state.copyWith(
+      customUpdateUrl: url,
+      clearCustomUpdateUrl: url == null || url.trim().isEmpty,
+    );
   }
 
   /// Persists and applies the chosen automatic check [interval].
@@ -349,6 +419,52 @@ class AppUpdateController extends Notifier<AppUpdateState> {
         await ref
             .read(updatePreferencesStoreProvider)
             .writeUpdateStarted(started: true);
+      case UpdateChannel.directApk:
+        final url = status.storeUrl;
+        if (url == null || url.isEmpty) return;
+        state = state.copyWith(starting: true, clearError: true);
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final savePath = '${tempDir.path}/uxnan-update.apk';
+          state = state.copyWith(
+            phase: AppUpdatePhase.downloading,
+            starting: false,
+            downloadedFilePath: savePath,
+          );
+          await _installSub?.cancel();
+          _installSub = service
+              .downloadDirectApk(url: url, targetPath: savePath)
+              .listen((progress) {
+            if (!ref.mounted) return;
+            final phase = switch (progress.stage) {
+              AppInstallStage.downloading => AppUpdatePhase.downloading,
+              AppInstallStage.downloaded => AppUpdatePhase.downloaded,
+              AppInstallStage.installing => AppUpdatePhase.installing,
+              AppInstallStage.failed ||
+              AppInstallStage.canceled =>
+                AppUpdatePhase.error,
+              AppInstallStage.installed || AppInstallStage.idle => state.phase,
+            };
+            state = state.copyWith(
+              phase: phase,
+              install: progress,
+              errorMessage: progress.stage == AppInstallStage.failed
+                  ? 'Failed to download APK update.'
+                  : null,
+            );
+            if (progress.stage == AppInstallStage.downloaded) {
+              unawaited(install());
+            }
+          });
+        } on Object catch (e) {
+          if (ref.mounted) {
+            state = state.copyWith(
+              phase: AppUpdatePhase.error,
+              errorMessage: e.toString(),
+              starting: false,
+            );
+          }
+        }
       case UpdateChannel.appStore:
         state = state.copyWith(starting: true, clearError: true);
         await service.presentStore(
@@ -381,6 +497,22 @@ class AppUpdateController extends Notifier<AppUpdateState> {
             errorMessage: error,
           );
         }
+      case UpdateChannel.directApk:
+        final path = state.downloadedFilePath;
+        if (path == null) return;
+        state = state.copyWith(
+          phase: AppUpdatePhase.installing,
+          clearError: true,
+        );
+        final error =
+            await ref.read(appUpdateServiceProvider).installDirectApk(path);
+        if (error != null && ref.mounted) {
+          state = state.copyWith(
+            phase: AppUpdatePhase.error,
+            errorMessage: error,
+          );
+        }
+
       case UpdateChannel.appStore:
         await ref.read(appUpdateServiceProvider).presentStore(
               appStoreId: status.appStoreId,
@@ -420,3 +552,10 @@ final appUpdateControllerProvider =
     NotifierProvider<AppUpdateController, AppUpdateState>(
   AppUpdateController.new,
 );
+
+/// The hosts of the active bridge to query for direct APK updates.
+///
+/// Defaults to null in isolated environments (such as unit tests) and is
+/// overridden at runtime (e.g. in `main.dart` with
+/// `activeBridgeHostsProvider`).
+final connectedBridgeHostsProvider = Provider<List<String>?>((ref) => null);

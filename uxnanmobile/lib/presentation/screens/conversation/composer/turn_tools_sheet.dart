@@ -43,6 +43,13 @@ class TurnToolsMenuButton extends StatelessWidget {
             label: l10n.composerAttachCamera,
           ),
         ),
+        PopupMenuItem(
+          value: AttachmentSource.file,
+          child: _MenuAction(
+            icon: UxIcons.description,
+            label: l10n.composerAttachFile,
+          ),
+        ),
       ],
       icon: UxIcon(
         UxIcons.add,

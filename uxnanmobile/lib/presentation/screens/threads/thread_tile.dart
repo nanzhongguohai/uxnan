@@ -23,7 +23,14 @@ import 'package:uxnan/presentation/widgets/ne_card.dart';
 import 'package:uxnan/presentation/widgets/ux_icon.dart';
 
 /// A per-thread action chosen from the long-press menu.
-enum _ThreadAction { rename, copyId, archive, unarchive, delete }
+enum _ThreadAction {
+  rename,
+  newWithSameConfig,
+  copyId,
+  archive,
+  unarchive,
+  delete,
+}
 
 /// A conversation row used by both the active threads list and the archived
 /// list. Tapping opens the conversation; long-pressing opens the actions menu
@@ -107,6 +114,7 @@ class _ThreadTileState extends ConsumerState<ThreadTile>
     // `secondaryContainer` is M3's own selected-item role — never a coloured
     // border, which reads as an error state at this size.
     final selected = ref.watch(openThreadProvider) == thread.id;
+    final l10n = AppLocalizations.of(context);
     final card = NeCard(
       // Selection outranks unread: a conversation you have open cannot
       // meaningfully still be asking for attention, and two tints at once
@@ -164,6 +172,45 @@ class _ThreadTileState extends ConsumerState<ThreadTile>
       ),
     );
 
+    final deleteBackground = Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.symmetric(horizontal: UxnanSpacing.lg),
+      decoration: BoxDecoration(
+        color: colors.error,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            l10n.threadActionDelete,
+            style: TextStyle(
+              color: colors.onError,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: UxnanSpacing.xs),
+          UxIcon(
+            UxIcons.delete,
+            color: colors.onError,
+          ),
+        ],
+      ),
+    );
+
+    final dismissible = Dismissible(
+      key: ValueKey('dismiss-${thread.id}'),
+      direction:
+          _deleting ? DismissDirection.none : DismissDirection.endToStart,
+      confirmDismiss: (_) => _confirmDeleteThread(context, thread),
+      onDismissed: (_) {
+        ref.read(threadManagerProvider).deleteThread(thread.id);
+      },
+      background: deleteBackground,
+      secondaryBackground: deleteBackground,
+      child: card,
+    );
+
     // While deleting, dim the card and float the app's shape-morphing loader
     // over it; the whole stack then fades and collapses via [_removal].
     final content = _deleting
@@ -174,7 +221,7 @@ class _ThreadTileState extends ConsumerState<ThreadTile>
               const PolygonLoader(size: 22),
             ],
           )
-        : card;
+        : dismissible;
 
     // Wraps every row: at rest the reversed animations sit at 1 (full size and
     // opacity), so this is a no-op until [_delete] drives [_removal] forward.
@@ -386,6 +433,12 @@ Future<void> showThreadActions(
               onTap: () => Navigator.pop(context, _ThreadAction.rename),
             ),
             ListTile(
+              leading: const UxIcon(UxIcons.addComment),
+              title: Text(l10n.threadActionNewWithSameConfig),
+              onTap: () =>
+                  Navigator.pop(context, _ThreadAction.newWithSameConfig),
+            ),
+            ListTile(
               leading: const UxIcon(UxIcons.contentCopy),
               title: Text(l10n.threadActionCopyId),
               onTap: () => Navigator.pop(context, _ThreadAction.copyId),
@@ -419,6 +472,8 @@ Future<void> showThreadActions(
   switch (action) {
     case _ThreadAction.rename:
       await _promptRenameThread(context, ref, thread);
+    case _ThreadAction.newWithSameConfig:
+      await _createThreadWithSameConfig(context, ref, thread);
     case _ThreadAction.copyId:
       await Clipboard.setData(ClipboardData(text: thread.id));
       if (context.mounted) {
@@ -502,6 +557,66 @@ Future<bool> _confirmDeleteThread(
     ),
   );
   return confirmed ?? false;
+}
+
+/// Creates a new thread using the same agent and model configuration as
+/// [thread], along with the same project and working directory, then opens it.
+Future<void> _createThreadWithSameConfig(
+  BuildContext context,
+  WidgetRef ref,
+  Thread thread,
+) async {
+  final l10n = AppLocalizations.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final coordinator = ref.read(sessionCoordinatorProvider);
+  final connectedDevice = coordinator.connectedDevice;
+  if (connectedDevice == null ||
+      (thread.deviceId != null &&
+          thread.deviceId != connectedDevice.macDeviceId)) {
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(l10n.threadsNotConnected)));
+    return;
+  }
+
+  try {
+    var projectId = thread.projectId;
+    var cwd = thread.cwd;
+    if (projectId == null || projectId.isEmpty) {
+      if (cwd != null && cwd.isNotEmpty) {
+        final resolved =
+            await ref.read(threadManagerProvider).resolveProject(cwd);
+        projectId = resolved?.id;
+      }
+      if (projectId == null || projectId.isEmpty) {
+        final projects = await ref.read(threadManagerProvider).loadProjects();
+        projectId = projects.firstOrNull?.id;
+        cwd ??= projects.firstOrNull?.cwd;
+      }
+    }
+    if (projectId == null || projectId.isEmpty) {
+      throw StateError('No project found for thread');
+    }
+
+    final deviceId = thread.deviceId ?? connectedDevice.macDeviceId;
+    final newThread = await ref.read(threadManagerProvider).startThread(
+          projectId: projectId,
+          agentId: thread.agentId,
+          model: thread.model,
+          cwd: cwd,
+          deviceId: deviceId,
+        );
+    await ref.read(threadManagerProvider).loadThreads(deviceId: deviceId);
+    if (context.mounted) {
+      context.openInPane(AppRoutes.conversation(newThread.id));
+    }
+  } on Object {
+    if (context.mounted) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(l10n.newThreadFailed)));
+    }
+  }
 }
 
 String _relativeTime(DateTime time) {

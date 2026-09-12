@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:uxnan/domain/entities/thread.dart';
 import 'package:uxnan/domain/enums/git_action_phase_status.dart';
 import 'package:uxnan/domain/value_objects/message_content.dart';
 import 'package:uxnan/domain/value_objects/thread_queue_state.dart';
@@ -320,6 +321,54 @@ class GitProgressEvent extends DomainEvent {
 
   @override
   List<Object?> get props => [phase, status, threadId];
+}
+
+/// The bridge started a new thread (`stream/thread/started`).
+class ThreadStartedEvent extends DomainEvent {
+  /// Creates a [ThreadStartedEvent].
+  const ThreadStartedEvent({required this.thread});
+
+  /// The created thread.
+  final Thread thread;
+
+  @override
+  List<Object?> get props => [thread];
+}
+
+/// The bridge deleted a thread (`stream/thread/deleted`).
+class ThreadDeletedEvent extends DomainEvent {
+  /// Creates a [ThreadDeletedEvent].
+  const ThreadDeletedEvent({required this.threadId});
+
+  /// The deleted thread id.
+  final String threadId;
+
+  @override
+  List<Object?> get props => [threadId];
+}
+
+/// The bridge archived a thread (`stream/thread/archived`).
+class ThreadArchivedEvent extends DomainEvent {
+  /// Creates a [ThreadArchivedEvent].
+  const ThreadArchivedEvent({required this.threadId});
+
+  /// The archived thread id.
+  final String threadId;
+
+  @override
+  List<Object?> get props => [threadId];
+}
+
+/// The bridge restored an archived thread (`stream/thread/unarchived`).
+class ThreadUnarchivedEvent extends DomainEvent {
+  /// Creates a [ThreadUnarchivedEvent].
+  const ThreadUnarchivedEvent({required this.threadId});
+
+  /// The restored thread id.
+  final String threadId;
+
+  @override
+  List<Object?> get props => [threadId];
 }
 
 /// A notification not yet modeled as a specific domain event.

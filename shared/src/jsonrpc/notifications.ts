@@ -3,7 +3,7 @@
  *
  * Source: architecture/02b-contracts-and-requirements.md (streaming events).
  */
-import type { QueuePausedReason, ThreadTitleSource } from '../models/thread.js';
+import type { QueuePausedReason, Thread, ThreadTitleSource } from '../models/thread.js';
 
 export const StreamNotification = {
   TurnStarted: 'stream/turn/started',
@@ -28,6 +28,14 @@ export const StreamNotification = {
   ModelResolved: 'stream/model/resolved',
   /** A thread's title changed on the bridge (a generated title, or another device's rename). */
   ThreadRenamed: 'stream/thread/renamed',
+  /** A thread was created on the bridge (e.g. started by another client). */
+  ThreadStarted: 'stream/thread/started',
+  /** A thread was deleted on the bridge. */
+  ThreadDeleted: 'stream/thread/deleted',
+  /** A thread was archived on the bridge. */
+  ThreadArchived: 'stream/thread/archived',
+  /** A thread was restored from archive on the bridge. */
+  ThreadUnarchived: 'stream/thread/unarchived',
 } as const;
 
 export type StreamNotification = (typeof StreamNotification)[keyof typeof StreamNotification];
@@ -175,4 +183,24 @@ export interface ThreadRenamedParams {
   threadId: string;
   title: string;
   titleSource: ThreadTitleSource;
+}
+
+/** A thread was created on the bridge (e.g. started by another client). */
+export interface ThreadStartedParams {
+  thread: Thread;
+}
+
+/** A thread was deleted on the bridge. */
+export interface ThreadDeletedParams {
+  threadId: string;
+}
+
+/** A thread was archived on the bridge. */
+export interface ThreadArchivedParams {
+  threadId: string;
+}
+
+/** A thread was unarchived on the bridge. */
+export interface ThreadUnarchivedParams {
+  threadId: string;
 }

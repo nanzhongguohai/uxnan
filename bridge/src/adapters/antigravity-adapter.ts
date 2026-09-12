@@ -194,12 +194,9 @@ export function buildAntigravityToolBlock(
     }
     case 'replace_file_content': {
       const target = typeof params['TargetFile'] === 'string' ? params['TargetFile'] : '';
-      const oldText =
-        typeof params['TargetContent'] === 'string' ? params['TargetContent'] : '';
+      const oldText = typeof params['TargetContent'] === 'string' ? params['TargetContent'] : '';
       const newText =
-        typeof params['ReplacementContent'] === 'string'
-          ? params['ReplacementContent']
-          : '';
+        typeof params['ReplacementContent'] === 'string' ? params['ReplacementContent'] : '';
       return editDiffBlock(target, oldText, newText);
     }
     default: {
@@ -268,7 +265,8 @@ export function parseAntigravityLine(line: string): AntigravityStreamEvent | nul
     if (typeof su['state'] === 'string') update.state = su['state'];
     if (typeof su['step_type'] === 'string') update.step_type = su['step_type'];
     if (typeof su['tool_name'] === 'string') update.tool_name = su['tool_name'];
-    if (typeof su['duration_seconds'] === 'number') update.duration_seconds = su['duration_seconds'];
+    if (typeof su['duration_seconds'] === 'number')
+      update.duration_seconds = su['duration_seconds'];
     if (toolInfo) {
       update.tool_info = {
         ...(typeof toolInfo['name'] === 'string' ? { name: toolInfo['name'] } : {}),
@@ -280,7 +278,9 @@ export function parseAntigravityLine(line: string): AntigravityStreamEvent | nul
           ? {
               error: {
                 ...(typeof errorObj['type'] === 'string' ? { type: errorObj['type'] } : {}),
-                ...(typeof errorObj['message'] === 'string' ? { message: errorObj['message'] } : {}),
+                ...(typeof errorObj['message'] === 'string'
+                  ? { message: errorObj['message'] }
+                  : {}),
               },
             }
           : {}),
@@ -445,6 +445,18 @@ export class AntigravityAdapter extends BaseAgentAdapter {
     return this.#conversationByThread.get(threadId);
   }
 
+  /**
+   * Adopt a native conversation UUID from disk (bridge restart recovery).
+   *
+   * Handed back by the AgentManager just before a turn so the conversation
+   * continues in the SAME `agy` session instead of minting a new one.
+   * Never overwrites a live mapping.
+   */
+  adoptNativeSession(threadId: string, sessionId: string): void {
+    if (!sessionId || this.#conversationByThread.has(threadId)) return;
+    this.#conversationByThread.set(threadId, sessionId);
+  }
+
   hasActiveSession(threadId: string): boolean {
     const session = this.#sessions.get(threadId);
     return Boolean(session && !session.exited);
@@ -565,8 +577,7 @@ export class AntigravityAdapter extends BaseAgentAdapter {
           }
           const stepIndex =
             typeof record['step_index'] === 'number' ? record['step_index'] : undefined;
-          const thinking =
-            typeof record['thinking'] === 'string' ? record['thinking'] : undefined;
+          const thinking = typeof record['thinking'] === 'string' ? record['thinking'] : undefined;
           if (stepIndex !== undefined && thinking && !session.emittedThinkingSteps.has(stepIndex)) {
             session.emittedThinkingSteps.add(stepIndex);
             const active = session.activeTurn;

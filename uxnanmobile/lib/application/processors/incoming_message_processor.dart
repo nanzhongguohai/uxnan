@@ -1,4 +1,5 @@
 import 'package:uxnan/application/processors/domain_event.dart';
+import 'package:uxnan/domain/entities/thread.dart';
 import 'package:uxnan/domain/enums/git_action_phase_status.dart';
 import 'package:uxnan/domain/value_objects/message_content.dart';
 import 'package:uxnan/domain/value_objects/rpc_message.dart';
@@ -82,6 +83,16 @@ class IncomingMessageProcessor {
               : 'agent',
           threadId: threadId,
         ),
+      'stream/thread/started' => _threadStarted(params['thread']),
+      'stream/thread/deleted' => ThreadDeletedEvent(
+          threadId: threadId ?? (params['threadId'] as String? ?? ''),
+        ),
+      'stream/thread/archived' => ThreadArchivedEvent(
+          threadId: threadId ?? (params['threadId'] as String? ?? ''),
+        ),
+      'stream/thread/unarchived' => ThreadUnarchivedEvent(
+          threadId: threadId ?? (params['threadId'] as String? ?? ''),
+        ),
       'stream/model/resolved' => ModelResolvedEvent(
           model: params['model'] is String ? params['model'] as String : '',
           turnId: turnId,
@@ -97,6 +108,19 @@ class IncomingMessageProcessor {
           params: message.params,
         ),
     };
+  }
+
+  DomainEvent _threadStarted(dynamic raw) {
+    if (raw is! Map) {
+      return const UnknownDomainEvent(method: 'stream/thread/started');
+    }
+    try {
+      return ThreadStartedEvent(
+        thread: Thread.fromJson(raw.cast<String, dynamic>()),
+      );
+    } on Object catch (_) {
+      return const UnknownDomainEvent(method: 'stream/thread/started');
+    }
   }
 
   /// Decodes a `stream/content/block` payload into a [ContentBlockEvent], or an

@@ -362,7 +362,7 @@ bridge/removeTrustedDevice       -> revocar confianza + drop session + drop push
 ### 1.4 Notificaciones de streaming (bridge -> phone)
 
 > **Lista canonica:** `../../shared/src/jsonrpc/notifications.ts`
-> (`StreamNotification`, 10 entradas). Son JSON-RPC notifications (sin `id`,
+> (`StreamNotification`, 16 entradas). Son JSON-RPC notifications (sin `id`,
 > unidireccionales). El telefono las decodifica via
 > `IncomingMessageProcessor` y las proyecta en la timeline via un reducer
 > sobre `TurnTimelineSnapshot`. Los parametros exactos viven en `shared/`.
@@ -380,6 +380,10 @@ stream/turn/delivered       -> TurnDeliveredParams { threadId, turnId, intoTurnI
 stream/queue/updated        -> QueueUpdatedParams  { threadId, queuedTurnIds, paused, pausedReason? }  (NUEVO 2026-07)
 stream/model/resolved       -> ModelResolvedParams { threadId, turnId, model }              (NUEVO 2026-06)
 stream/thread/renamed       -> ThreadRenamedParams { threadId, title, titleSource }         (NUEVO 2026-08)
+stream/thread/started       -> ThreadStartedParams { thread }                               (NUEVO 2026-09)
+stream/thread/deleted       -> ThreadDeletedParams { threadId }                             (NUEVO 2026-09)
+stream/thread/archived      -> ThreadArchivedParams { threadId }                            (NUEVO 2026-09)
+stream/thread/unarchived    -> ThreadUnarchivedParams { threadId }                          (NUEVO 2026-09)
 ```
 
 **Nombre de la conversacion (2026-08).** Ningun CLI de agente nos da un titulo:
@@ -541,12 +545,14 @@ desbloquear si el usuario omite / expira).
 **`TurnAttachment`** (adjunto inline en `turn/send`):
 ```typescript
 interface TurnAttachment {
-  type?: 'image';
-  mimeType: string;                           // 'image/png' | 'image/jpeg' | ...
+  type?: 'image' | 'file';
+  mimeType: string;                           // 'image/png', 'text/plain', ...
   base64Data?: string;                        // una de base64Data o path
+  fileName?: string;                          // nombre de archivo original (e.g. error.log)
   path?: string;                              // ruta alternativa (tolerante)
   width?: number;
   height?: number;
+  size?: number;                              // tamano en bytes
 }
 ```
 

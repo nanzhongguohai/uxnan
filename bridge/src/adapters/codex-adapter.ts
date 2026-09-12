@@ -395,6 +395,18 @@ export class CodexAdapter extends BaseAgentAdapter {
   #pendingApprovals = new Map<string, { kind: ApprovalKind; serverRequestId: number | string }>();
   #approvalSeq = 0;
 
+  /**
+   * Cross-thread turn serialization lock. The Codex app-server's streaming
+   * events (`item/agentMessage/delta`, `item/completed`, etc.) carry no
+   * `threadId` or bridge `turnId`, so the adapter relies on `#activeRun()`
+   * picking the *only* entry in `#active`. Allowing concurrent turns from
+   * different threads would make that assumption false and route deltas to the
+   * wrong conversation. This lock ensures at most one turn is in flight at any
+   * time; additional turns wait until the current one completes.
+   */
+  #turnLockHeld = false;
+  readonly #turnWaiters: Array<() => void> = [];
+
   /** Native Codex thread id for a thread (on-disk history-fallback locator). */
   nativeSessionId(threadId: string): string | undefined {
     return this.#threadByBridgeThread.get(threadId);
@@ -603,6 +615,11 @@ export class CodexAdapter extends BaseAgentAdapter {
 
     // Persist the native session id early so the on-disk history fallback
     // works after a crash mid-turn.
+    // Acquire the cross-thread turn lock BEFORE registering the run and
+    // emitting `turn_started`. This serializes Codex turns across all threads
+    // so that `#activeRun()` / `#currentRun()` always find exactly the one
+    // run whose events the single app-server is producing.
+    await this.#acquireTurnLock();
     this.#active.set(turnId, {
       bridgeTurnId: turnId,
       codexTurnId: null,
@@ -627,6 +644,7 @@ export class CodexAdapter extends BaseAgentAdapter {
       if (run) run.codexTurnId = response.turn.id;
     } catch (err) {
       this.#active.delete(turnId);
+      this.#releaseTurnLock();
       this.emit({
         type: 'turn_error',
         threadId,
@@ -722,6 +740,7 @@ export class CodexAdapter extends BaseAgentAdapter {
 
   async #interruptTurn(run: ActiveRun): Promise<void> {
     this.#active.delete(run.bridgeTurnId);
+    this.#releaseTurnLock();
     if (!this.#rpc) return;
     if (!run.codexTurnId) {
       // Turn never produced an id; the app-server hasn't seen it yet. We
@@ -826,6 +845,7 @@ export class CodexAdapter extends BaseAgentAdapter {
       });
     }
     this.#active.clear();
+    this.#releaseTurnLock();
     for (const approvalId of [...this.#pendingApprovals.keys()]) {
       // Drop local state; the bridge's 5-min timer covers the round-trip.
       this.#pendingApprovals.delete(approvalId);
@@ -906,7 +926,10 @@ export class CodexAdapter extends BaseAgentAdapter {
         // The bridge ends the turn on this event, so the adapter must too:
         // a run left "in flight" here would hold the app-server — and with it
         // the thread's single writer — until some later turn released it.
-        if (run) this.#active.delete(run.turnId);
+        if (run) {
+          this.#active.delete(run.turnId);
+          this.#releaseTurnLock();
+        }
         this.#releaseAppServerIfIdle();
         return;
       }
@@ -1076,6 +1099,7 @@ export class CodexAdapter extends BaseAgentAdapter {
     const status = typeof turn['status'] === 'string' ? (turn['status'] as string) : 'completed';
     const error = isRecord(turn['error']) ? turn['error'] : undefined;
     this.#active.delete(run.bridgeTurnId);
+    this.#releaseTurnLock();
     if (status === 'failed' || error) {
       const message =
         error && typeof error['message'] === 'string'
@@ -1113,6 +1137,33 @@ export class CodexAdapter extends BaseAgentAdapter {
   }
 
   /**
+   * Acquire the cross-thread turn lock. Resolves immediately when no turn is
+   * running; otherwise waits until the current holder releases (FIFO order).
+   */
+  async #acquireTurnLock(): Promise<void> {
+    if (!this.#turnLockHeld) {
+      this.#turnLockHeld = true;
+      return;
+    }
+    await new Promise<void>((resolve) => this.#turnWaiters.push(resolve));
+  }
+
+  /**
+   * Release the cross-thread turn lock, unblocking the next waiting turn (if
+   * any). Called from every turn-completion path: normal completion, error,
+   * abort, and unexpected process exit.
+   */
+  #releaseTurnLock(): void {
+    const next = this.#turnWaiters.shift();
+    if (next) {
+      // Hand the lock directly to the next waiter (stays held).
+      next();
+    } else {
+      this.#turnLockHeld = false;
+    }
+  }
+
+  /**
    * Return the current in-flight run (mutable reference) so item-completed
    * handlers can accumulate per-run state directly on
    * the stored object. Returns `null` when no turn is active.
@@ -1125,8 +1176,8 @@ export class CodexAdapter extends BaseAgentAdapter {
   /** Helper: locate the current in-flight run keyed by bridge turnId. */
   #currentRun(): { turnId: string; threadId: string; cwd: string } | null {
     for (const run of this.#active.values()) {
-      // There should be exactly one in-flight run for a single adapter; the
-      // bridge serializes turns per thread, so this picks the first one.
+      // The cross-thread turn lock guarantees at most one entry in #active,
+      // so this always returns the correct run.
       return {
         turnId: run.bridgeTurnId,
         threadId: run.threadId,

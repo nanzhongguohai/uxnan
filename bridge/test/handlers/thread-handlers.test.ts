@@ -481,3 +481,67 @@ test('thread/read of an unknown id returns -32008', async () => {
   await bridge.stop();
   await rmrf(baseDir);
 });
+
+test('thread lifecycle methods broadcast notifications across connected devices', async () => {
+  const { bridge, baseDir } = await boot();
+  const notifications: any[] = [];
+  bridge.context.sessionRegistry.register('phone-1', {
+    send: (msg) => notifications.push(msg),
+  });
+
+  const projectsRes = await bridge.router.dispatch(makeRequest('0', 'project/list', {}));
+  assert.ok('result' in projectsRes);
+  const projectId = (projectsRes.result as Project[])[0]!.id;
+
+  // thread/start
+  const startRes = await bridge.router.dispatch(
+    makeRequest('1', 'thread/start', { projectId, title: 'Broadcast test', agentId: 'echo' }),
+  );
+  assert.ok('result' in startRes);
+  const threadId = (startRes.result as { id: string }).id;
+  assert.ok(
+    notifications.some(
+      (n) => n.method === 'stream/thread/started' && n.params?.thread?.id === threadId,
+    ),
+  );
+
+  // thread/rename
+  await bridge.router.dispatch(
+    makeRequest('2', 'thread/rename', { threadId, title: 'Renamed test' }),
+  );
+  assert.ok(
+    notifications.some(
+      (n) =>
+        n.method === 'stream/thread/renamed' &&
+        n.params?.threadId === threadId &&
+        n.params?.title === 'Renamed test',
+    ),
+  );
+
+  // thread/archive
+  await bridge.router.dispatch(makeRequest('3', 'thread/archive', { threadId }));
+  assert.ok(
+    notifications.some(
+      (n) => n.method === 'stream/thread/archived' && n.params?.threadId === threadId,
+    ),
+  );
+
+  // thread/unarchive
+  await bridge.router.dispatch(makeRequest('4', 'thread/unarchive', { threadId }));
+  assert.ok(
+    notifications.some(
+      (n) => n.method === 'stream/thread/unarchived' && n.params?.threadId === threadId,
+    ),
+  );
+
+  // thread/delete
+  await bridge.router.dispatch(makeRequest('5', 'thread/delete', { threadId }));
+  assert.ok(
+    notifications.some(
+      (n) => n.method === 'stream/thread/deleted' && n.params?.threadId === threadId,
+    ),
+  );
+
+  await bridge.stop();
+  await rmrf(baseDir);
+});

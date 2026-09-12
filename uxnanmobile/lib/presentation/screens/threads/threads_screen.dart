@@ -23,6 +23,7 @@ import 'package:uxnan/presentation/screens/threads/thread_tile.dart';
 import 'package:uxnan/presentation/screens/threads/workspace_details_sheet.dart';
 import 'package:uxnan/presentation/theme/icons.dart';
 import 'package:uxnan/presentation/theme/spacing.dart';
+import 'package:uxnan/presentation/widgets/app_update_dialog.dart';
 import 'package:uxnan/presentation/widgets/expressive_progress.dart';
 import 'package:uxnan/presentation/widgets/icon_surface.dart';
 import 'package:uxnan/presentation/widgets/ne_entrance_scope.dart';
@@ -138,6 +139,18 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<TrustedDevice?>>(
+      connectedDeviceProvider,
+      (prev, next) {
+        final prevDevice = prev?.value;
+        final nextDevice = next.value;
+        if (nextDevice?.macDeviceId == widget.deviceId &&
+            prevDevice?.macDeviceId != widget.deviceId) {
+          unawaited(_refresh());
+        }
+      },
+    );
+
     final allThreads = ref.watch(threadsProvider).value ?? const <Thread>[];
     final sort = ref.watch(threadSortProvider);
     final compact = ref.watch(threadDensityCompactProvider);
@@ -613,53 +626,59 @@ class _UpdateBanner extends ConsumerWidget {
     final version = state.status?.storeVersion;
     final body = _body(l10n, state, version: version);
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
         UxnanSpacing.lg,
         UxnanSpacing.sm,
         UxnanSpacing.lg,
         0,
       ),
-      padding: const EdgeInsets.all(UxnanSpacing.md),
-      decoration: BoxDecoration(
+      child: Material(
         color: colors.primaryContainer,
         borderRadius: const BorderRadius.all(UxnanRadius.lg),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              UxIcon(
-                UxIcons.systemUpdate,
-                size: 18,
-                color: colors.onPrimaryContainer,
-              ),
-              const SizedBox(width: UxnanSpacing.sm),
-              Expanded(
-                child: Text(
-                  l10n.updateAvailableTitle,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => AppUpdateDialog.show(context),
+          child: Padding(
+            padding: const EdgeInsets.all(UxnanSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    UxIcon(
+                      UxIcons.systemUpdate,
+                      size: 18,
+                      color: colors.onPrimaryContainer,
+                    ),
+                    const SizedBox(width: UxnanSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        l10n.updateAvailableTitle,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: colors.onPrimaryContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: UxnanSpacing.xs),
+                Text(
+                  body,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colors.onPrimaryContainer,
-                        fontWeight: FontWeight.w600,
                       ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: UxnanSpacing.xs),
-          Text(
-            body,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.onPrimaryContainer,
+                const SizedBox(height: UxnanSpacing.sm),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: _actions(l10n, controller, state),
                 ),
+              ],
+            ),
           ),
-          const SizedBox(height: UxnanSpacing.sm),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: _actions(l10n, controller, state),
-          ),
-        ],
+        ),
       ),
     );
   }

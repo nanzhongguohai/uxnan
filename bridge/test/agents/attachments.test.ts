@@ -99,3 +99,28 @@ test('materializeAttachments uses the right extension per MIME type', async () =
   assert.ok(paths[1]!.endsWith('.webp'));
   await rmrf(cwd);
 });
+
+test('materializeAttachments preserves fileName for file attachments', async () => {
+  const cwd = join(tmpdir(), `uxnan-cwd-${randomUUID()}`);
+  await mkdir(cwd, { recursive: true });
+  const logData = Buffer.from('Error: connection timeout at main.go:42').toString('base64');
+  const { paths, note } = await materializeAttachments(
+    [
+      {
+        type: 'file',
+        fileName: 'error.log',
+        mimeType: 'text/plain',
+        base64Data: logData,
+      },
+    ],
+    'turn-5',
+    { cwd },
+  );
+  assert.equal(paths.length, 1);
+  assert.ok(paths[0]!.endsWith('error.log'));
+  assert.match(note, /Attached file/);
+  assert.ok(note.includes(`${ATTACHMENTS_DIRNAME}/turn-5/error.log`));
+  const content = await readFile(paths[0]!, 'utf-8');
+  assert.equal(content, 'Error: connection timeout at main.go:42');
+  await rmrf(cwd);
+});

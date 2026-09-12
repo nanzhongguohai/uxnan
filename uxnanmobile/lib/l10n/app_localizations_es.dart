@@ -824,6 +824,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get threadActionRename => 'Renombrar';
 
   @override
+  String get threadActionNewWithSameConfig => 'Nueva con misma configuración';
+
+  @override
   String get threadActionCopyId => 'Copiar ID del hilo';
 
   @override
@@ -968,18 +971,26 @@ class AppLocalizationsEs extends AppLocalizations {
   String get composerAttachCamera => 'Tomar una foto';
 
   @override
-  String get composerAttachFailed => 'No se pudo adjuntar esa imagen';
+  String get composerAttachFile => 'Documento / archivo';
+
+  @override
+  String get composerAttachFailed => 'No se pudo adjuntar';
 
   @override
   String composerAttachLimit(int count) {
-    return 'Puedes adjuntar hasta $count imágenes por mensaje';
+    return 'Puedes adjuntar hasta $count adjuntos por mensaje';
+  }
+
+  @override
+  String composerAttachFileSizeLimit(int limit) {
+    return 'El archivo excede el límite (máx $limit MB)';
   }
 
   @override
   String get attachmentImage => 'Imagen adjunta';
 
   @override
-  String get attachmentRemove => 'Quitar imagen';
+  String get attachmentRemove => 'Quitar';
 
   @override
   String get composerStop => 'Detener';
@@ -2952,4 +2963,30 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get licensesError => 'No se pudieron cargar las licencias.';
+
+  @override
+  String get updateCustomServerTitle => 'Servidor de actualizaciones';
+
+  @override
+  String get updateCustomServerSubtitle =>
+      'URL de servidor APK directo o host de Bridge';
+
+  @override
+  String get updateCustomServerHint => 'ej. http://192.168.1.5:4040';
+
+  @override
+  String get updateCustomServerDialogTitle =>
+      'URL del servidor de actualización';
+
+  @override
+  String get updateCustomServerClear => 'Restablecer por defecto';
+
+  @override
+  String get updateDialogIgnoreVersion => 'Ignorar esta versión';
+
+  @override
+  String get updateDialogBackgroundAction => 'Descargar en segundo plano';
+
+  @override
+  String get updateDialogLaterAction => 'Más tarde';
 }

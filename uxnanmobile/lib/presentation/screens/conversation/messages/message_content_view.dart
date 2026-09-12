@@ -75,6 +75,7 @@ class MessageContentView extends StatelessWidget {
       final SystemContent c => _SystemBanner(content: c),
       final DiffContent c => _DiffBlock(content: c),
       final ImageContent c => _ImageBlock(content: c),
+      final FileContent c => _FileBlock(content: c),
       final ToolUseContent c =>
         _Placeholder(icon: UxIcons.build, label: 'Tool · ${c.toolName}'),
       final MermaidContent _ =>
@@ -1045,6 +1046,69 @@ class _ImageBlock extends StatelessWidget {
             label: content.mimeType,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Renders a [FileContent]: a compact card with file icon, filename, and size.
+class _FileBlock extends StatelessWidget {
+  const _FileBlock({required this.content});
+  final FileContent content;
+
+  String _formatSize(int? bytes) {
+    if (bytes == null) return '';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final sizeStr = _formatSize(content.size);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: UxnanSpacing.md,
+        vertical: UxnanSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: const BorderRadius.all(UxnanRadius.md),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          UxIcon(UxIcons.description, size: 20, color: colors.primary),
+          const SizedBox(width: UxnanSpacing.sm),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  content.fileName,
+                  style: textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (sizeStr.isNotEmpty)
+                  Text(
+                    sizeStr,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

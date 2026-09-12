@@ -97,13 +97,19 @@ class _UserBubbleState extends ConsumerState<_UserBubble> {
       .where((t) => t.isNotEmpty)
       .join('\n\n');
 
-  /// The message's attached images, shown above the bubble.
+  /// The message's attachments (images and files), shown above the bubble.
+  List<MessageContent> get _attachments => widget.message.contents
+      .where((c) => c is ImageContent || c is FileContent)
+      .toList();
+
   List<ImageContent> get _images =>
       widget.message.contents.whereType<ImageContent>().toList();
 
-  /// Content that is neither text nor an image — kept inside the bubble.
+  /// Content that is neither text nor an attachment — kept inside the bubble.
   List<MessageContent> get _otherBlocks => widget.message.contents
-      .where((c) => c is! TextContent && c is! ImageContent)
+      .where(
+        (c) => c is! TextContent && c is! ImageContent && c is! FileContent,
+      )
       .toList();
 
   void _copy() {
@@ -168,16 +174,17 @@ class _UserBubbleState extends ConsumerState<_UserBubble> {
     final cancelled = message.deliveryState == MessageDeliveryState.cancelled;
     final motion =
         reduceMotion ? Duration.zero : const Duration(milliseconds: 220);
-    final images = _images;
-    // An image-only message needs no bubble at all — the strip is the message.
-    // A queued one always keeps its bubble: the edit/cancel actions live in the
-    // bubble's corner, so dropping it would leave a waiting image unactionable.
+    final attachments = _attachments;
+    // An attachment-only message needs no bubble at all — the strip is the
+    // message. A queued one always keeps its bubble: the edit/cancel actions
+    // live in the bubble's corner, so dropping it would leave a waiting
+    // attachment unactionable.
     final hasBubble = _text.isNotEmpty || _otherBlocks.isNotEmpty || queued;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (images.isNotEmpty)
+        if (attachments.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: UxnanSpacing.xs),
             child: ConstrainedBox(
@@ -186,15 +193,24 @@ class _UserBubbleState extends ConsumerState<_UserBubble> {
                 alignment: Alignment.centerRight,
                 child: ImageThumbStrip(
                   key: const ValueKey('message-attachments'),
-                  images: images,
+                  attachments: attachments,
                   size: _sentThumbSize,
-                  onTap: (index) => unawaited(
-                    showImageViewerDialog(
-                      context,
-                      images: images,
-                      initialIndex: index,
-                    ),
-                  ),
+                  onTap: (index) {
+                    final item = attachments[index];
+                    if (item is ImageContent) {
+                      final images = _images;
+                      final imgIndex = images.indexOf(item);
+                      if (imgIndex >= 0) {
+                        unawaited(
+                          showImageViewerDialog(
+                            context,
+                            images: images,
+                            initialIndex: imgIndex,
+                          ),
+                        );
+                      }
+                    }
+                  },
                 ),
               ),
             ),
@@ -515,9 +531,11 @@ class _UserMessageBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    // Images are rendered above the bubble, not in it.
+    // Attachments (images and files) are rendered above the bubble, not in it.
     final nonText = message.contents
-        .where((c) => c is! TextContent && c is! ImageContent)
+        .where(
+          (c) => c is! TextContent && c is! ImageContent && c is! FileContent,
+        )
         .toList();
 
     return LayoutBuilder(

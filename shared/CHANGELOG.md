@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 
+### Added — thread lifecycle streaming notifications
+
+- Added `StreamNotification.ThreadStarted` (`'stream/thread/started'`),
+  `StreamNotification.ThreadDeleted` (`'stream/thread/deleted'`),
+  `StreamNotification.ThreadArchived` (`'stream/thread/archived'`), and
+  `StreamNotification.ThreadUnarchived` (`'stream/thread/unarchived'`) in
+  `src/jsonrpc/notifications.ts`, along with their param types
+  `ThreadStartedParams`, `ThreadDeletedParams`, `ThreadArchivedParams`, and
+  `ThreadUnarchivedParams`.
+- Allows connected clients (such as multiple mobile devices connected to the
+  same bridge) to synchronize thread creation, deletion, and archiving in
+  real time.
+- Extended `TurnAttachment` in `src/models/workspace.ts` to support file
+  attachments (`type?: 'image' | 'file'`), preserving the original `fileName?: string`
+  and optional `size?: number`.
+
 ## [0.0.15-alpha.20260813] - 20260813
 ### Fixed — the README badge undercounted the methods
 

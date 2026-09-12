@@ -822,6 +822,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadActionRename => 'Rename';
 
   @override
+  String get threadActionNewWithSameConfig => 'New with same config';
+
+  @override
   String get threadActionCopyId => 'Copy thread ID';
 
   @override
@@ -966,11 +969,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerAttachCamera => 'Take a photo';
 
   @override
+  String get composerAttachFile => 'Document / file';
+
+  @override
   String get composerAttachFailed => 'Couldn\'t attach that image';
 
   @override
   String composerAttachLimit(int count) {
-    return 'You can attach up to $count images per message';
+    return 'You can attach up to $count attachments per message';
+  }
+
+  @override
+  String composerAttachFileSizeLimit(int limit) {
+    return 'File size exceeds limit (max $limit MB)';
   }
 
   @override
@@ -2937,4 +2948,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get licensesError => 'Couldn\'t load the licenses.';
+
+  @override
+  String get updateCustomServerTitle => 'Custom update server';
+
+  @override
+  String get updateCustomServerSubtitle =>
+      'Direct APK server URL or Bridge host';
+
+  @override
+  String get updateCustomServerHint => 'e.g. http://192.168.1.5:4040';
+
+  @override
+  String get updateCustomServerDialogTitle => 'Update server URL';
+
+  @override
+  String get updateCustomServerClear => 'Reset to default';
+
+  @override
+  String get updateDialogIgnoreVersion => 'Ignore this version';
+
+  @override
+  String get updateDialogBackgroundAction => 'Download in background';
+
+  @override
+  String get updateDialogLaterAction => 'Later';
 }

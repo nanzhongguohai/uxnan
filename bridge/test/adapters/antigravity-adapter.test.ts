@@ -361,11 +361,19 @@ test('AntigravityAdapter interaction refreshes the idle timeout countdown', asyn
 
   // Another 30ms -> total elapsed since turn 1 is 60ms (>50ms), but session is still alive
   await new Promise((r) => setTimeout(r, 30));
-  assert.equal(adapter.hasActiveSession('t1'), true, 'session must still be alive because timer was refreshed');
+  assert.equal(
+    adapter.hasActiveSession('t1'),
+    true,
+    'session must still be alive because timer was refreshed',
+  );
 
   // Wait remaining 30ms to exceed refreshed 50ms window
   await new Promise((r) => setTimeout(r, 35));
-  assert.equal(adapter.hasActiveSession('t1'), false, 'session now dismantled after refreshed timeout expires');
+  assert.equal(
+    adapter.hasActiveSession('t1'),
+    false,
+    'session now dismantled after refreshed timeout expires',
+  );
   await adapter.stop();
 });
 
@@ -712,3 +720,18 @@ test('AntigravityAdapter streams real-time thinking from transcript.jsonl', asyn
   }
 });
 
+test('adoptNativeSession restores conversation UUID and does not overwrite existing mapping', () => {
+  const { spawnFn } = fakeSpawner();
+  const adapter = new AntigravityAdapter({ spawnFn });
+
+  assert.equal(adapter.nativeSessionId('th1'), undefined);
+
+  adapter.adoptNativeSession('th1', 'uuid-1234');
+  assert.equal(adapter.nativeSessionId('th1'), 'uuid-1234');
+
+  adapter.adoptNativeSession('th1', 'uuid-5678');
+  assert.equal(adapter.nativeSessionId('th1'), 'uuid-1234');
+
+  adapter.adoptNativeSession('th2', '');
+  assert.equal(adapter.nativeSessionId('th2'), undefined);
+});

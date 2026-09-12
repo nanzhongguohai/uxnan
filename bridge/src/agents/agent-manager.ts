@@ -405,7 +405,9 @@ export class AgentManager {
       persistBase.length > 0
         ? persistBase
         : attachments.length > 0
-          ? `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
+          ? attachments.some((a) => a.type === 'file')
+            ? `[${attachments.length} attachment${attachments.length > 1 ? 's' : ''}]`
+            : `[${attachments.length} image attachment${attachments.length > 1 ? 's' : ''}]`
           : persistBase;
 
     // A queue that is merely PAUSED still queues: draining is held, so starting
@@ -955,9 +957,7 @@ export class AgentManager {
       this.#activeTurnByThread.delete(threadId);
       const now = this.#options.now();
       await this.#options.store.abortTurn(threadId, turnId, now);
-      this.#options.notify(
-        makeNotification(StreamNotification.TurnAborted, { threadId, turnId }),
-      );
+      this.#options.notify(makeNotification(StreamNotification.TurnAborted, { threadId, turnId }));
       this.#assistantByTurn.delete(turnId);
       void this.#cleanupAttachments(turnId);
       this.#pauseQueue(threadId, 'turnAborted');

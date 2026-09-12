@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { agentEnv, DESKTOP_TERMINAL_ENV_KEYS, defaultSpawn, killProcessTree } from '../../src/index.js';
+import {
+  agentEnv,
+  DESKTOP_TERMINAL_ENV_KEYS,
+  defaultSpawn,
+  killProcessTree,
+} from '../../src/index.js';
 
 // The desktop ADE hands each terminal an identity (`UXNAN_AGENT_ID` + its hook
 // server's coordinates). Environment variables are inherited by the whole

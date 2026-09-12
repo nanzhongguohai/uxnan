@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uxnan/infrastructure/media/attachment_picker_service.dart';
@@ -116,6 +117,51 @@ void main() {
     test('a failing plugin is swallowed into an empty list', () async {
       final service = AttachmentPickerService(_FakePicker(throwOnPick: true));
       expect(await service.pickImages(AttachmentSource.gallery), isEmpty);
+    });
+  });
+
+  group('AttachmentPickerService.pickFiles', () {
+    test('returns picked files with fileName, base64 and inferred mimeType',
+        () async {
+      final service = AttachmentPickerService(
+        null,
+        ({allowMultiple = true, withData = true}) async => FilePickerResult([
+          PlatformFile(
+            name: 'app.log',
+            size: 11,
+            bytes: Uint8List.fromList(utf8.encode('hello world')),
+          ),
+          PlatformFile(
+            name: 'data.json',
+            size: 13,
+            bytes: Uint8List.fromList(utf8.encode('{"key":"val"}')),
+          ),
+        ]),
+      );
+
+      final files = await service.pickFiles();
+      expect(files, hasLength(2));
+      expect(files[0].fileName, 'app.log');
+      expect(files[0].mimeType, 'text/plain');
+      expect(files[0].base64Data, base64Encode(utf8.encode('hello world')));
+      expect(files[1].fileName, 'data.json');
+      expect(files[1].mimeType, 'application/json');
+    });
+
+    test('ignores files exceeding maxBytes', () async {
+      final service = AttachmentPickerService(
+        null,
+        ({allowMultiple = true, withData = true}) async => FilePickerResult([
+          PlatformFile(
+            name: 'huge.log',
+            size: 200,
+            bytes: Uint8List.fromList(List.filled(200, 1)),
+          ),
+        ]),
+      );
+
+      final files = await service.pickFiles(maxBytes: 100);
+      expect(files, isEmpty);
     });
   });
 }

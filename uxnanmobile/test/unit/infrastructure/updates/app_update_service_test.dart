@@ -309,6 +309,107 @@ void main() {
     });
   });
 
+  group('Direct APK — Bridge / Custom Server', () {
+    test('check queries customUrl and detects newer version', () async {
+      final service = AppUpdateService(
+        platformOverride: TargetPlatform.android,
+        isWebOverride: false,
+        packageInfoLoader: () async => pkg(),
+        directLookup: (url) async => {
+          'version': '1.1.0',
+          'versionCode': 2,
+          'downloadUrl': '/app/download',
+          'fileSize': 1234567,
+          'releaseNotes': 'New features added',
+        },
+      );
+
+      final status = await service.check(
+        customUrl: 'http://192.168.1.10:4040/app/version',
+      );
+
+      expect(status.channel, UpdateChannel.directApk);
+      expect(status.updateAvailable, isTrue);
+      expect(status.storeVersion, '1.1.0');
+      expect(status.releaseNotes, 'New features added');
+      expect(status.fileSizeBytes, 1234567);
+      expect(
+        status.storeUrl,
+        'http://192.168.1.10:4040/app/download',
+      );
+    });
+
+    test('check queries bridgeHosts when reachable', () async {
+      final service = AppUpdateService(
+        platformOverride: TargetPlatform.android,
+        isWebOverride: false,
+        packageInfoLoader: () async => pkg(),
+        directLookup: (url) async {
+          if (url.contains('192.168.1.50')) {
+            return {
+              'version': '1.2.0',
+              'versionCode': 5,
+              'downloadUrl': 'http://192.168.1.50:4040/app/download',
+            };
+          }
+          return null;
+        },
+      );
+
+      final status = await service.check(
+        bridgeHosts: ['192.168.1.50:4040'],
+      );
+
+      expect(status.channel, UpdateChannel.directApk);
+      expect(status.updateAvailable, isTrue);
+      expect(status.storeVersion, '1.2.0');
+    });
+
+    test('downloadDirectApk delegates to downloader', () async {
+      final service = AppUpdateService(
+        platformOverride: TargetPlatform.android,
+        isWebOverride: false,
+        directDownloader: (url, target, {cancelToken}) async* {
+          yield const AppInstallProgress(
+            stage: AppInstallStage.downloading,
+            fraction: 0.5,
+          );
+          yield const AppInstallProgress(
+            stage: AppInstallStage.downloaded,
+            fraction: 1,
+          );
+        },
+      );
+
+      final progress = await service
+          .downloadDirectApk(
+            url: 'http://example.com/app.apk',
+            targetPath: '/tmp/app.apk',
+          )
+          .toList();
+
+      expect(progress.length, 2);
+      expect(progress.first.fraction, 0.5);
+      expect(progress.last.stage, AppInstallStage.downloaded);
+    });
+
+    test('installDirectApk delegates to installer', () async {
+      String? installedPath;
+      final service = AppUpdateService(
+        platformOverride: TargetPlatform.android,
+        isWebOverride: false,
+        directInstaller: (path) async {
+          installedPath = path;
+          return null;
+        },
+      );
+
+      final result = await service.installDirectApk('/tmp/uxnan.apk');
+      expect(result, isNull);
+      expect(installedPath, '/tmp/uxnan.apk');
+    });
+  });
+
   test('unsupported platform reports none', () async {
     final service = AppUpdateService(
       platformOverride: TargetPlatform.linux,

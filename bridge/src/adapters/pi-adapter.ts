@@ -388,6 +388,14 @@ export class PiAdapter extends BaseAgentAdapter {
     return this.#sessionByThread.get(threadId);
   }
 
+  /**
+   * Adopt a native session id from disk (bridge restart recovery).
+   */
+  adoptNativeSession(threadId: string, sessionId: string): void {
+    if (!sessionId || this.#sessionByThread.has(threadId)) return;
+    this.#sessionByThread.set(threadId, sessionId);
+  }
+
   constructor(options: PiAdapterOptions = {}) {
     super();
     this.#binaryPath = options.binaryPath ?? 'pi';
@@ -549,7 +557,12 @@ export class PiAdapter extends BaseAgentAdapter {
         active.currentAssistantText += event.text;
         this.emit({ type: 'delta', threadId, turnId: active.turnId, data: { text: event.text } });
       } else if (event.kind === 'thinking' && event.text) {
-        this.emit({ type: 'thinking', threadId, turnId: active.turnId, data: { text: event.text } });
+        this.emit({
+          type: 'thinking',
+          threadId,
+          turnId: active.turnId,
+          data: { text: event.text },
+        });
       } else if (event.kind === 'tool_start' && event.tool) {
         active.pendingTools.set(event.toolCallId ?? '', event.tool);
       } else if (event.kind === 'tool_end') {
@@ -696,10 +709,14 @@ export class PiAdapter extends BaseAgentAdapter {
           });
           return;
         }
-        const contextWindow = model !== undefined ? this.#contextWindowByModel.get(model) : undefined;
+        const contextWindow =
+          model !== undefined ? this.#contextWindowByModel.get(model) : undefined;
         const usage =
           activeTurn.tokens !== undefined
-            ? { tokens: activeTurn.tokens, ...(contextWindow !== undefined ? { contextWindow } : {}) }
+            ? {
+                tokens: activeTurn.tokens,
+                ...(contextWindow !== undefined ? { contextWindow } : {}),
+              }
             : undefined;
         this.emit({
           type: 'turn_completed',

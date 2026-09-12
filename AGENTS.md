@@ -172,6 +172,11 @@ If it affects contracts in `shared/`, all consuming components must be updated i
 - drift (SQLite) for local persistence
 - Detailed conventions: `architecture/03-technical-reference.md`
 - **Always use the installed Flutter skills** when working on this app — they encode this repo's exact style: `flutter-init-project` (bootstrap/reset a baseline), `flutter-clean-architect` (module/layer structure), `flutter-riverpod-expert` (providers, notifiers, auth/router wiring), `flutter-m3-uiux` (theme, design tokens, responsive UI). Invoke the relevant skill before scaffolding or restructuring. The architecture docs remain the source of truth: where a skill's generic default conflicts with the spec (e.g. `lib/config/` vs the spec's `lib/core/`, or a minimal-dependency default), follow the spec.
+- **App updates & fast 64-bit APK packaging:** Whenever changes are made to `uxnanmobile/` that warrant an app update:
+  1. Increment the build number (`versionCode`) in `uxnanmobile/pubspec.yaml` (`version: <name>+<build-number>`), strictly increasing so clients detect the update.
+  2. Package for **64-bit Android only** (`flutter build apk --release --target-platform android-arm64`), keeping the APK size small without multi-ABI bloat.
+  3. Minification and resource shrinking can be skipped (`isMinifyEnabled = false`, `isShrinkResources = false`) to accelerate packaging speed.
+  4. Place the resulting APK in `uxnanmobile/build/app/outputs/flutter-apk/app-release.apk` (or `app-arm64-v8a-release.apk`) so the Bridge daemon (`GET /app/version` and `GET /app/download`) immediately detects and serves the new version for in-app auto-updates.
 
 **Desktop (uxnandesktop/):**
 - Backend: Rust with Tauri 2 + Tokio async

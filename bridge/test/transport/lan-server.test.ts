@@ -105,3 +105,53 @@ test('POST /agent-hook/approval 404s when no handler is configured', async () =>
     assert.equal(res.status, 404);
   });
 });
+
+test('GET /app/version returns metadata when configured, 404s otherwise', async () => {
+  await withServer(undefined, async (port) => {
+    const res = await get(port, '/app/version');
+    assert.equal(res.status, 404);
+    assert.equal(res.body['error'], 'app_version_disabled');
+  });
+
+  const handle = await startLanServer({
+    port: 0,
+    host: '127.0.0.1',
+    onConnection: () => {},
+    onAppVersion: () => ({
+      status: 200,
+      json: { version: '0.0.23', versionCode: 20260912, downloadUrl: '/app/download' },
+    }),
+  });
+  try {
+    const res = await get(handle.port, '/app/version');
+    assert.equal(res.status, 200);
+    assert.equal(res.body['version'], '0.0.23');
+    assert.equal(res.body['versionCode'], 20260912);
+  } finally {
+    await handle.close();
+  }
+});
+
+test('GET /app/download streams content when configured, 404s otherwise', async () => {
+  await withServer(undefined, async (port) => {
+    const res = await fetch(`http://127.0.0.1:${port}/app/download`);
+    assert.equal(res.status, 404);
+  });
+
+  const handle = await startLanServer({
+    port: 0,
+    host: '127.0.0.1',
+    onConnection: () => {},
+    onAppDownload: (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive' });
+      res.end('fake-apk-bytes');
+    },
+  });
+  try {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/app/download`);
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'fake-apk-bytes');
+  } finally {
+    await handle.close();
+  }
+});

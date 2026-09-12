@@ -80,11 +80,11 @@ class ComposerBar extends ConsumerStatefulWidget {
   /// Whether sending is currently allowed (e.g. connected).
   final bool enabled;
 
-  /// The images queued for the next turn. They ride *inside* the pill, above
-  /// the text field, so the composer grows into the attachment instead of
-  /// stacking a separate box on top of it. A non-empty list also lets the user
-  /// send with an empty field (image-only message) and shows Send.
-  final List<ImageContent> attachments;
+  /// The attachments queued for the next turn. They ride *inside* the pill,
+  /// above the text field, so the composer grows into the attachment instead
+  /// of stacking a separate box on top of it. A non-empty list also lets the
+  /// user send with an empty field (attachment-only message) and shows Send.
+  final List<MessageContent> attachments;
 
   /// Whether the agent is currently producing a turn — Send becomes Stop.
   final bool running;
@@ -621,7 +621,7 @@ class _ComposerBarState extends ConsumerState<ComposerBar> {
                               ),
                               child: ImageThumbStrip(
                                 key: const ValueKey('composer-attachments'),
-                                images: widget.attachments,
+                                attachments: widget.attachments,
                                 size: _attachmentThumbSize,
                                 onRemove: widget.onRemoveAttachment,
                               ),

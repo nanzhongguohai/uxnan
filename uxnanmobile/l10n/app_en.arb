@@ -361,6 +361,10 @@
   "threadsNotConnected": "Not connected to this PC — showing a cached view.",
   "threadsEmptyBody": "Threads from this PC will appear here. Pull down to refresh.",
   "threadActionRename": "Rename",
+  "threadActionNewWithSameConfig": "New with same config",
+  "@threadActionNewWithSameConfig": {
+    "description": "Action sheet item to create a new conversation with the same agent and model configuration."
+  },
   "threadActionCopyId": "Copy thread ID",
   "threadActionFork": "Fork conversation",
   "threadForkFailed": "Couldn't fork this conversation",
@@ -439,11 +443,17 @@
   "composerAttach": "Attach",
   "composerAttachGallery": "Photo library",
   "composerAttachCamera": "Take a photo",
+  "composerAttachFile": "Document / file",
   "composerAttachFailed": "Couldn't attach that image",
-  "composerAttachLimit": "You can attach up to {count} images per message",
+  "composerAttachLimit": "You can attach up to {count} attachments per message",
   "@composerAttachLimit": {
-    "description": "Snackbar shown when the pending-attachment queue is full (images ride inline on the turn, so the count is bounded).",
+    "description": "Snackbar shown when the pending-attachment queue is full.",
     "placeholders": { "count": { "type": "int" } }
+  },
+  "composerAttachFileSizeLimit": "File size exceeds limit (max {limit} MB)",
+  "@composerAttachFileSizeLimit": {
+    "description": "Snackbar shown when a chosen file exceeds the size limit.",
+    "placeholders": { "limit": { "type": "int" } }
   },
   "attachmentImage": "Attached image",
   "@attachmentImage": {
@@ -1781,5 +1791,38 @@
   "licensesError": "Couldn't load the licenses.",
   "@licensesError": {
     "description": "Shown when the license registry failed to load."
+  },
+  "updateCustomServerTitle": "Custom update server",
+  "@updateCustomServerTitle": {
+    "description": "Title of the custom update server settings tile."
+  },
+  "updateCustomServerSubtitle": "Direct APK server URL or Bridge host",
+  "@updateCustomServerSubtitle": {
+    "description": "Subtitle of the custom update server settings tile."
+  },
+  "updateCustomServerHint": "e.g. http://192.168.1.5:4040",
+  "@updateCustomServerHint": {
+    "description": "Placeholder hint for the custom update server URL input."
+  },
+  "updateCustomServerDialogTitle": "Update server URL",
+  "@updateCustomServerDialogTitle": {
+    "description": "Title of the dialog to configure a custom update server URL."
+  },
+  "updateCustomServerClear": "Reset to default",
+  "@updateCustomServerClear": {
+    "description": "Button to clear the custom update server URL."
+  },
+  "updateDialogIgnoreVersion": "Ignore this version",
+  "@updateDialogIgnoreVersion": {
+    "description": "Button in the update dialog to ignore the current new version."
+  },
+  "updateDialogBackgroundAction": "Download in background",
+  "@updateDialogBackgroundAction": {
+    "description": "Button in the update dialog to dismiss the dialog while download continues in background."
+  },
+  "updateDialogLaterAction": "Later",
+  "@updateDialogLaterAction": {
+    "description": "Button in the update dialog to postpone updating."
   }
 }
+

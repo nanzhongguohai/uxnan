@@ -12,6 +12,10 @@ enum UpdateChannel {
   /// or by opening [AppUpdateStatus.storeUrl] as a fallback.
   appStore,
 
+  /// Direct APK update from Bridge host or custom update server (Android).
+  /// Downloaded in-app and installed via native package installer.
+  directApk,
+
   /// No in-app update mechanism applies on this platform (web/desktop or a
   /// build not installed from a store). Always a "no update" result.
   unsupported,
@@ -37,6 +41,7 @@ class AppUpdateStatus extends Equatable {
     this.appStoreId,
     this.flexibleAllowed = false,
     this.installStage = AppInstallStage.idle,
+    this.fileSizeBytes,
   });
 
   /// A "no update / not applicable" result for [channel]. Used as the guarded
@@ -50,7 +55,8 @@ class AppUpdateStatus extends Equatable {
         releaseNotes = null,
         appStoreId = null,
         flexibleAllowed = false,
-        installStage = AppInstallStage.idle;
+        installStage = AppInstallStage.idle,
+        fileSizeBytes = null;
 
   /// The mechanism this result came from.
   final UpdateChannel channel;
@@ -95,6 +101,9 @@ class AppUpdateStatus extends Equatable {
   /// Android (the App Store applies its own updates).
   final AppInstallStage installStage;
 
+  /// Download size in bytes when known (direct APK / custom server).
+  final int? fileSizeBytes;
+
   @override
   List<Object?> get props => [
         channel,
@@ -106,6 +115,7 @@ class AppUpdateStatus extends Equatable {
         appStoreId,
         flexibleAllowed,
         installStage,
+        fileSizeBytes,
       ];
 }
 

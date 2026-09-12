@@ -30,24 +30,29 @@ export interface WorkspaceFileTarget {
 }
 
 /**
- * An image (or other media) attached to a user turn (`turn/send { attachments }`).
+ * A file or image attached to a user turn (`turn/send { attachments }`).
  * Tolerant by design — the phone sends inline base64 with the original
- * `mimeType`; `path`/`width`/`height` are best-effort metadata. At least one of
- * `base64Data`/`path` must be present for the bridge to deliver it to the agent.
+ * `mimeType` and optional `fileName`; `path`/`width`/`height`/`size` are best-effort
+ * metadata. At least one of `base64Data`/`path` must be present for the bridge
+ * to deliver it to the agent.
  */
 export interface TurnAttachment {
-  /** Wire discriminator (always `image` today). */
-  type?: 'image';
-  /** MIME type, e.g. `image/png`. */
+  /** Wire discriminator (`image` or `file`). */
+  type?: 'image' | 'file';
+  /** MIME type, e.g. `image/png`, `text/plain`, `application/pdf`. */
   mimeType: string;
   /** Inline base64 payload (no `data:` URI prefix). */
   base64Data?: string;
-  /** Original/workspace path the image came from, if any. */
+  /** Original filename, e.g. `error.log`. */
+  fileName?: string;
+  /** Original/workspace path the file/image came from, if any. */
   path?: string;
-  /** Pixel width, if known. */
+  /** Pixel width, if known (images only). */
   width?: number;
-  /** Pixel height, if known. */
+  /** Pixel height, if known (images only). */
   height?: number;
+  /** File size in bytes, if known. */
+  size?: number;
 }
 
 /**

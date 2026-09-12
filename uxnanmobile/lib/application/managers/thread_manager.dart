@@ -22,7 +22,6 @@ import 'package:uxnan/domain/enums/message_role.dart';
 import 'package:uxnan/domain/enums/system_content_kind.dart';
 import 'package:uxnan/domain/enums/thread_activity.dart';
 import 'package:uxnan/domain/enums/thread_status.dart';
-import 'package:uxnan/domain/enums/thread_sync_state.dart';
 import 'package:uxnan/domain/repositories/i_message_repository.dart';
 import 'package:uxnan/domain/repositories/i_thread_repository.dart';
 import 'package:uxnan/domain/value_objects/git/git_worktree_entry.dart';
@@ -52,6 +51,7 @@ class ThreadManager {
     required RpcSend sendRequest,
     Stream<ConnectionPhase>? connectionPhases,
     String? Function()? foregroundThreadId,
+    String? Function()? connectedDeviceId,
     Uuid? uuid,
     Duration resyncTimeout = const Duration(seconds: 8),
     Duration externalSyncInterval = const Duration(seconds: 3),
@@ -59,6 +59,7 @@ class ThreadManager {
         _messageRepository = messageRepository,
         _sendRequest = sendRequest,
         _foregroundThreadId = foregroundThreadId,
+        _connectedDeviceId = connectedDeviceId,
         _uuid = uuid ?? const Uuid(),
         _resyncTimeout = resyncTimeout,
         _externalSyncInterval = externalSyncInterval {
@@ -71,6 +72,7 @@ class ThreadManager {
   final IThreadRepository _threadRepository;
   final IMessageRepository _messageRepository;
   final RpcSend _sendRequest;
+  final String? Function()? _connectedDeviceId;
 
   /// Upper bound on the **resync** `turn/list` round-trip (the newest-page pull
   /// run on resume/reconnect). Tighter than the correlator's 30 s default so a
@@ -225,6 +227,7 @@ class ThreadManager {
       // no longer confirmed until this connection tells us again.
       if (_turnStateKnown.value.isNotEmpty) _turnStateKnown.add(const {});
       unawaited(resyncActive());
+      unawaited(loadThreads());
     }
   }
 
@@ -321,14 +324,25 @@ class ThreadManager {
       projectId != null ? {'projectId': projectId} : null,
     );
     final result = response.result;
-    if (result is! List) return;
-    for (final raw in result) {
+    final rawList = switch (result) {
+      final List<dynamic> list => list,
+      final Map<String, dynamic> map when map['threads'] is List =>
+        map['threads'] as List<dynamic>,
+      final Map<dynamic, dynamic> map when map['threads'] is List =>
+        map['threads'] as List<dynamic>,
+      _ => null,
+    };
+    if (rawList == null) return;
+    final targetDeviceId = deviceId ?? _connectedDeviceId?.call();
+    for (final raw in rawList) {
       if (raw is Map) {
         // Tag each synced thread with the PC it came from so the list can be
         // scoped to the selected device.
         final thread = _parseThread(raw.cast<String, dynamic>());
         await _threadRepository.saveThread(
-          deviceId != null ? thread.copyWith(deviceId: deviceId) : thread,
+          targetDeviceId != null
+              ? thread.copyWith(deviceId: targetDeviceId)
+              : thread,
         );
       }
     }
@@ -886,6 +900,17 @@ class ThreadManager {
         _live[threadId] = seeded;
       }
       _setActivity(threadId, ThreadActivity.running);
+    } else {
+      // The bridge confirms there is NO turn in flight for this thread.
+      // If this client had an active live turn tracked, it completed, errored
+      // or was aborted while disconnected/away. Clear the live buffer and
+      // awaiting-input hold so the turn is no longer rendered as streaming,
+      // allowing _persistTurns below to write the terminal turn to disk.
+      if (_live.containsKey(threadId)) {
+        _live.remove(threadId);
+        _clearAwaitingInput(threadId);
+      }
+      _setActivity(threadId, ThreadActivity.idle);
     }
     // Re-attach to the message queue the same way. It is live bridge state, so
     // this is what restores the waiting bubbles (and the paused banner) after
@@ -1300,13 +1325,13 @@ class ThreadManager {
     String threadId,
     String text, {
     Map<String, Object>? options,
-    List<ImageContent>? attachments,
+    List<MessageContent>? attachments,
     ({String name, String? args})? command,
   }) async {
-    final images = attachments ?? const <ImageContent>[];
+    final atts = attachments ?? const <MessageContent>[];
     final contents = <MessageContent>[
       if (text.isNotEmpty) TextContent(text),
-      ...images,
+      ...atts,
     ];
     if (contents.isEmpty) return;
     await _titleFromFirstPrompt(threadId, text);
@@ -1342,8 +1367,8 @@ class ThreadManager {
               'args': command.args,
           },
         if (options != null && options.isNotEmpty) 'options': options,
-        if (images.isNotEmpty)
-          'attachments': [for (final image in images) image.toJson()],
+        if (atts.isNotEmpty)
+          'attachments': [for (final att in atts) att.toJson()],
       });
       if (res.error != null) {
         await _messageRepository.saveMessage(
@@ -1610,6 +1635,44 @@ class ThreadManager {
     await _threadRepository.saveThread(thread.copyWith(title: trimmed));
   }
 
+  Future<void> _handleRemoteThreadStarted(Thread incoming) async {
+    final existing = await _threadRepository.getThread(incoming.id);
+    final targetDeviceId = _connectedDeviceId?.call();
+    final thread = incoming.copyWith(
+      deviceId: existing?.deviceId ?? targetDeviceId,
+      worktreePath: existing?.worktreePath ?? incoming.worktreePath,
+    );
+    await _threadRepository.saveThread(thread);
+  }
+
+  Future<void> _handleRemoteThreadDeleted(String threadId) async {
+    await _threadRepository.deleteThread(threadId);
+    _live.remove(threadId);
+    _setActivity(threadId, ThreadActivity.idle);
+    markRead(threadId);
+    if (_activeThreadId == threadId) {
+      await _messagesSub?.cancel();
+      _messagesSub = null;
+      _activeThreadId = null;
+      _activePersisted = const [];
+      _timeline.add(const TurnTimelineSnapshot());
+    }
+  }
+
+  Future<void> _handleRemoteThreadArchived(
+    String threadId, {
+    required bool archived,
+  }) async {
+    final thread = await _threadRepository.getThread(threadId);
+    if (thread != null) {
+      await _threadRepository.saveThread(
+        thread.copyWith(
+          status: archived ? ThreadStatus.archived : ThreadStatus.active,
+        ),
+      );
+    }
+  }
+
   /// Settles a message the agent took **into the turn already running**: it
   /// becomes an ordinary sent message, in the place it was already showing.
   ///
@@ -1769,9 +1832,13 @@ class ThreadManager {
       return;
     }
 
-    // Events that don't carry their own threadId belong to the active thread
-    // (the bridge tags turn notifications with threadId; deltas may not).
-    final threadId = _threadOf(event) ?? _activeThreadId;
+    // Events that don't carry their own threadId are looked up by turnId in
+    // the live-turn map (one turn belongs to exactly one thread) before
+    // falling back to the active thread. This prevents a background thread's
+    // events from contaminating the foreground conversation when the bridge
+    // omits threadId.
+    final threadId =
+        _threadOf(event) ?? _threadIdForTurn(_turnOf(event)) ?? _activeThreadId;
     if (threadId == null) return;
 
     switch (event) {
@@ -1886,6 +1953,14 @@ class ThreadManager {
         // so the list converges without a refetch — never over a title the user
         // chose here, which the bridge also refuses to overwrite.
         unawaited(_adoptBridgeTitle(threadId, title, titleSource));
+      case ThreadStartedEvent(:final thread):
+        unawaited(_handleRemoteThreadStarted(thread));
+      case ThreadDeletedEvent(:final threadId):
+        unawaited(_handleRemoteThreadDeleted(threadId));
+      case ThreadArchivedEvent(:final threadId):
+        unawaited(_handleRemoteThreadArchived(threadId, archived: true));
+      case ThreadUnarchivedEvent(:final threadId):
+        unawaited(_handleRemoteThreadArchived(threadId, archived: false));
       case GitProgressEvent() || ModelResolvedEvent() || UnknownDomainEvent():
         break;
     }
@@ -2383,41 +2458,45 @@ class ThreadManager {
         GitProgressEvent(:final threadId) => threadId,
         ModelResolvedEvent(:final threadId) => threadId,
         ThreadRenamedEvent(:final threadId) => threadId,
+        ThreadStartedEvent(:final thread) => thread.id,
+        ThreadDeletedEvent(:final threadId) => threadId,
+        ThreadArchivedEvent(:final threadId) => threadId,
+        ThreadUnarchivedEvent(:final threadId) => threadId,
         UnknownDomainEvent() => null,
       };
 
-  Thread _parseThread(Map<String, dynamic> json) {
-    // The bridge sends `createdAt` and `updatedAt` (epoch ms). The old parser
-    // read `lastActivity`, which the wire never carries — so last-activity was
-    // always null. Map `updatedAt` to lastActivity and keep `createdAt` for the
-    // default newest-first ordering.
-    final createdAt = json['createdAt'];
-    final updatedAt = json['updatedAt'] ?? json['lastActivity'];
-    return Thread(
-      id: json['id'] as String,
-      title: json['title'] as String? ?? json['id'] as String,
-      agentId: json['agentId'] as String? ?? 'custom',
-      projectId: json['projectId'] as String?,
-      cwd: json['cwd'] as String?,
-      worktreePath: json['worktreePath'] as String?,
-      model: json['model'] as String?,
-      syncState: ThreadSyncState.synced,
-      status: _parseStatus(json['status'] as String?),
-      lastActivity: updatedAt is int
-          ? DateTime.fromMillisecondsSinceEpoch(updatedAt)
-          : null,
-      createdAt: createdAt is int
-          ? DateTime.fromMillisecondsSinceEpoch(createdAt)
-          : null,
-    );
+  /// Extracts the `turnId` from a [DomainEvent], if present.
+  static String? _turnOf(DomainEvent event) => switch (event) {
+        TurnStartedEvent(:final turnId) => turnId,
+        MessageDeltaEvent(:final turnId) => turnId,
+        ThinkingDeltaEvent(:final turnId) => turnId,
+        ContentBlockEvent(:final turnId) => turnId,
+        TurnCompletedEvent(:final turnId) => turnId,
+        TurnErrorEvent(:final turnId) => turnId,
+        TurnAbortedEvent(:final turnId) => turnId,
+        TurnCancelledEvent(:final turnId) => turnId,
+        TurnDeliveredEvent(:final turnId) => turnId,
+        QueueUpdatedEvent() => null,
+        GitProgressEvent() => null,
+        ModelResolvedEvent(:final turnId) => turnId,
+        ThreadRenamedEvent() => null,
+        ThreadStartedEvent() => null,
+        ThreadDeletedEvent() => null,
+        ThreadArchivedEvent() => null,
+        ThreadUnarchivedEvent() => null,
+        UnknownDomainEvent() => null,
+      };
+
+  /// Locates the thread currently running [turnId] from the in-memory live map.
+  String? _threadIdForTurn(String? turnId) {
+    if (turnId == null || turnId.isEmpty) return null;
+    return _live.entries
+        .where((e) => e.value.turnId == turnId)
+        .map((e) => e.key)
+        .firstOrNull;
   }
 
-  static ThreadStatus _parseStatus(String? name) {
-    for (final value in ThreadStatus.values) {
-      if (value.name == name) return value;
-    }
-    return ThreadStatus.active;
-  }
+  Thread _parseThread(Map<String, dynamic> json) => Thread.fromJson(json);
 }
 
 /// A turn streaming in memory for one thread. Survives leaving the conversation

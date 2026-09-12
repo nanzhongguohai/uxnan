@@ -18,6 +18,7 @@ class UpdatePreferencesStore {
   static const String _dismissedVersionKey = 'uxnan.updates.dismissedVersion';
   static const String _intervalKey = 'uxnan.updates.checkInterval';
   static const String _updateStartedKey = 'uxnan.updates.updateStarted';
+  static const String _customUpdateUrlKey = 'uxnan.updates.customUrl';
 
   /// When the last update check completed, or null if one never ran.
   Future<DateTime?> readLastCheck() async {
@@ -89,5 +90,24 @@ class UpdatePreferencesStore {
       return;
     }
     await prefs.setBool(_updateStartedKey, true);
+  }
+
+  /// The custom update check server URL configured by the user, or null if
+  /// unset.
+  Future<String?> readCustomUpdateUrl() async {
+    final prefs = await _prefs;
+    final value = prefs.getString(_customUpdateUrlKey);
+    return (value == null || value.trim().isEmpty) ? null : value.trim();
+  }
+
+  /// Persists or clears the custom update check server [url].
+  Future<void> writeCustomUpdateUrl(String? url) async {
+    final prefs = await _prefs;
+    final trimmed = url?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      await prefs.remove(_customUpdateUrlKey);
+      return;
+    }
+    await prefs.setString(_customUpdateUrlKey, trimmed);
   }
 }

@@ -251,6 +251,14 @@ export class OpenCodeAdapter extends BaseAgentAdapter {
   }
 
   /**
+   * Adopt a native session id from disk (bridge restart recovery).
+   */
+  adoptNativeSession(threadId: string, sessionId: string): void {
+    if (!sessionId || this.#sessionByThread.has(threadId)) return;
+    this.#sessionByThread.set(threadId, sessionId);
+  }
+
+  /**
    * Read a persisted OpenCode session through the official serve API. This is
    * also able to see turns written by OpenCode Desktop/another CLI because all
    * clients share OpenCode's session database.

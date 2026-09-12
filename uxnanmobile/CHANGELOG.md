@@ -5,6 +5,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- **File attachment selection and delivery for analysis.** The composer "+" action
+  menu now features a "Document / file" option (`UxIcons.description`) backed by
+  `AttachmentPickerService.pickFiles` (using `file_picker`), allowing users to pick
+  arbitrary documents, logs, code files, and configs (up to 10 MB). The composer
+  renders attached files as compact chips (`_FileChip` with file icon, original filename,
+  formatted size, and remove button), and serializes them as `FileContent` attachments
+  on `turn/send` alongside images. Message bubbles display attached files above the
+  bubble in `ImageThumbStrip`.
+- **Direct APK in-app update channel with update prompt dialog.** Supports checking updates via connected Bridge LAN endpoints (`/app/version`) and user-configurable custom update URLs. Features in-app direct APK downloading with live progress, prompting with `AppUpdateDialog` (version comparison, release notes, background download, and immediate install), and invoking Android's native package installer via `FileProvider` (`dev.luisgamas.uxnanmobile.fileprovider`) and `REQUEST_INSTALL_PACKAGES`.
+- **"New with same config" thread context action.** Long-pressing a thread in the conversation list now offers a "New with same config" option (`UxIcons.addComment`) which creates a new thread retaining the same agent type, model configuration, and working directory/project without manual reconfiguration.
+
+### Changed
+- **64-bit ARM ABI filter for reduced APK size.** Configured `ndk.abiFilters` to include only `arm64-v8a` in `android/app/build.gradle.kts`, excluding legacy 32-bit (`armeabi-v7a`, `x86`) and emulator `x86_64` native binaries to significantly reduce Android APK size for 64-bit devices (from 117 MB down to 47 MB).
+- **Accelerated APK packaging without R8 minification.** Set `isMinifyEnabled = false` and `isShrinkResources = false` in `android/app/build.gradle.kts` to skip the slow R8 optimization step during APK packaging, accelerating incremental release builds down to ~24s.
+
+### Fixed
+- **Multi-device thread synchronization & `loadThreads` response parsing.** Fixed an issue where `ThreadManager.loadThreads` strictly required a bare `List` and dropped responses returning `{ "threads": [...] }` (`ThreadList` contract shape). `loadThreads` now accepts both shapes, correctly sets `deviceId` based on the active connection, and automatically pulls threads whenever a device connection is established or switched.
+- **Real-time multi-device thread event handling.** Implemented handling for `stream/thread/started`, `stream/thread/deleted`, `stream/thread/archived`, and `stream/thread/unarchived` in `IncomingMessageProcessor` and `ThreadManager`, updating the local SQLite database in real time so actions taken on one phone or desktop are immediately reflected on other connected phones without needing a manual refresh.
+- **Prevent background turn deltas from contaminating foreground conversations.** `ThreadManager._applyEvent` now resolves missing `threadId`s on streaming turn events using `turnId` and the `_live` active turn map before falling back to `_activeThreadId`.
+- **Clear stranded live turn on reconnect when bridge reports no active turn.** `ThreadManager._resyncThread` now detects when `page.activeTurnId == null` and removes any stale in-flight `_live` buffer, clears awaiting-input state, and resets thread activity to idle. This unblocks conversations that were left in an endless spinning/generating state when a bridge daemon restarted or disconnected mid-turn.
+- **Wire automatic update check on bridge connection.** Connected bridge hosts (`connectedBridgeHostsProvider`) are now reactively aggregated from live connected endpoints, active device direct addresses, and paired trusted devices (`activeBridgeHostsProvider`). App launch and reconnect now immediately check for direct updates against the active bridge, prompting with `AppUpdateDialog` when a newer build is detected.
+
 
 ## [0.0.22-alpha.20260815+20260815] - 20260815
 ### Changed — the model shows the name you read, not the id the CLI routes on

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:uxnan/application/managers/thread_manager.dart';
 import 'package:uxnan/application/processors/domain_event.dart';
 import 'package:uxnan/domain/entities/message.dart';
+import 'package:uxnan/domain/entities/thread.dart';
 import 'package:uxnan/domain/enums/approval_decision.dart';
 import 'package:uxnan/domain/enums/approval_mode.dart';
 import 'package:uxnan/domain/enums/assistant_response_phase.dart';
@@ -16,6 +17,7 @@ import 'package:uxnan/domain/enums/message_role.dart';
 import 'package:uxnan/domain/enums/system_content_kind.dart';
 import 'package:uxnan/domain/enums/thread_activity.dart';
 import 'package:uxnan/domain/enums/thread_status.dart';
+import 'package:uxnan/domain/enums/thread_sync_state.dart';
 import 'package:uxnan/domain/value_objects/message_content.dart';
 import 'package:uxnan/domain/value_objects/rpc_message.dart';
 import 'package:uxnan/infrastructure/repositories/drift_message_repository.dart';
@@ -57,6 +59,7 @@ void main() {
   Object? turnListResult;
   // Test-settable `turn/read` result (null → empty, the no-op reconcile).
   Object? turnReadResult;
+  Object? threadListResult;
   Object? agentListResult;
   late ThreadManager manager;
 
@@ -69,26 +72,29 @@ void main() {
     turnSendParams = null;
     turnListResult = null;
     turnReadResult = null;
+    threadListResult = null;
     agentListResult = null;
     manager = ThreadManager(
       threadRepository: threadRepo,
       messageRepository: messageRepo,
       domainEvents: events.stream,
+      connectedDeviceId: () => 'device-mac-1',
       sendRequest: (method, [params]) async {
         sentMethods.add(method);
         if (method == 'turn/send') turnSendParams = params;
         final result = switch (method) {
           'turn/list' => turnListResult ?? <String, dynamic>{},
           'turn/read' => turnReadResult ?? <String, dynamic>{},
-          'thread/list' => [
-              {
-                'id': 'th1',
-                'title': 'Thread 1',
-                'agentId': 'codex',
-                'status': 'active',
-                'model': 'gpt-5',
-              },
-            ],
+          'thread/list' => threadListResult ??
+              [
+                {
+                  'id': 'th1',
+                  'title': 'Thread 1',
+                  'agentId': 'codex',
+                  'status': 'active',
+                  'model': 'gpt-5',
+                },
+              ],
           'project/list' => [
               {'id': 'p1', 'name': 'App', 'cwd': '/projects/app'},
             ],
@@ -546,6 +552,53 @@ void main() {
     final streamed =
         manager.timeline.messages.firstWhere((m) => m.id == 'stream-turnZ');
     expect(_text(streamed), 'head produced while away. tail end');
+  });
+
+  test(
+      'resyncActive clears in-flight live turn when bridge reports '
+      'no active turn', () async {
+    await manager.selectThread('th1');
+    await _settle();
+
+    // Start a live turn so _live has an in-flight entry.
+    events
+      ..add(const TurnStartedEvent(turnId: 'turnZ', threadId: 'th1'))
+      ..add(
+        const MessageDeltaEvent(
+          turnId: 'turnZ',
+          threadId: 'th1',
+          delta: 'generating...',
+        ),
+      );
+    await _settle();
+    expect(manager.timeline.isStreaming, isTrue);
+    expect((await manager.activityStream.first)['th1'], ThreadActivity.running);
+
+    // Now bridge disconnects/reconnects and reports NO active turn (activeTurnId is null),
+    // and turnZ is reported as aborted.
+    turnListResult = {
+      'turns': [
+        {
+          'id': 'turnZ',
+          'status': 'aborted',
+          'messages': [
+            {'role': 'assistant', 'content': 'generating...'},
+          ],
+        },
+      ],
+      'total': 1,
+      'activeTurnId': null,
+    };
+    await manager.resyncActive();
+    await _settle();
+
+    // The live buffer was dismantled: no longer streaming, activity idle,
+    // and the turn is rendered as settled/aborted.
+    expect(manager.timeline.isStreaming, isFalse);
+    expect(
+      (await manager.activityStream.first)['th1'] ?? ThreadActivity.idle,
+      ThreadActivity.idle,
+    );
   });
 
   test('a replayed turn/started never wipes the tracked live buffer', () async {
@@ -1190,7 +1243,93 @@ void main() {
     expect(threads.map((t) => t.id).toList(), ['th1']);
     expect(threads.single.title, 'Thread 1');
     expect(threads.single.model, 'gpt-5');
+    expect(threads.single.deviceId, 'device-mac-1');
     expect(sentMethods, contains('thread/list'));
+  });
+
+  test(
+      'loadThreads parses ThreadList map payload and applies connectedDeviceId',
+      () async {
+    threadListResult = {
+      'threads': [
+        {
+          'id': 'th-remote',
+          'title': 'Remote Thread',
+          'agentId': 'claude',
+          'status': 'active',
+          'model': 'claude-3-5-sonnet',
+        },
+      ],
+    };
+    await manager.loadThreads();
+    final threads = await threadRepo.getThreads();
+    final loaded = threads.firstWhere((t) => t.id == 'th-remote');
+    expect(loaded.title, 'Remote Thread');
+    expect(loaded.model, 'claude-3-5-sonnet');
+    expect(loaded.deviceId, 'device-mac-1');
+  });
+
+  test(
+      'ThreadStartedEvent saves thread to local repository with '
+      'connectedDeviceId', () async {
+    events.add(
+      const ThreadStartedEvent(
+        thread: Thread(
+          id: 'th-broadcast',
+          title: 'Broadcasted Thread',
+          agentId: 'codex',
+          syncState: ThreadSyncState.synced,
+          status: ThreadStatus.active,
+        ),
+      ),
+    );
+    await pumpEventQueue();
+    final thread = await threadRepo.getThread('th-broadcast');
+    expect(thread, isNotNull);
+    expect(thread!.title, 'Broadcasted Thread');
+    expect(thread.deviceId, 'device-mac-1');
+  });
+
+  test('ThreadDeletedEvent deletes thread from local repository', () async {
+    await threadRepo.saveThread(
+      const Thread(
+        id: 'th-to-delete',
+        title: 'To Delete',
+        agentId: 'codex',
+        syncState: ThreadSyncState.synced,
+        status: ThreadStatus.active,
+      ),
+    );
+    expect(await threadRepo.getThread('th-to-delete'), isNotNull);
+    events.add(const ThreadDeletedEvent(threadId: 'th-to-delete'));
+    await pumpEventQueue();
+    expect(await threadRepo.getThread('th-to-delete'), isNull);
+  });
+
+  test('ThreadArchivedEvent and ThreadUnarchivedEvent update thread status',
+      () async {
+    await threadRepo.saveThread(
+      const Thread(
+        id: 'th-archive-test',
+        title: 'Archive Test',
+        agentId: 'codex',
+        syncState: ThreadSyncState.synced,
+        status: ThreadStatus.active,
+      ),
+    );
+    events.add(const ThreadArchivedEvent(threadId: 'th-archive-test'));
+    await pumpEventQueue();
+    expect(
+      (await threadRepo.getThread('th-archive-test'))!.status,
+      ThreadStatus.archived,
+    );
+
+    events.add(const ThreadUnarchivedEvent(threadId: 'th-archive-test'));
+    await pumpEventQueue();
+    expect(
+      (await threadRepo.getThread('th-archive-test'))!.status,
+      ThreadStatus.active,
+    );
   });
 
   test('loadProjects parses the project list', () async {

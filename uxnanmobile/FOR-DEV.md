@@ -222,14 +222,14 @@ connected to live bridge data, validated on-device against a real bridge.
   (`speech_to_text`) beside contextual Send/Stop; a collapsible turn-context
   icon shelf with a left-aligned 38 dp visual rhythm (48 dp touch targets) for
   data-driven reasoning options and color-coded approval mode;
-  a compact in-turn circular **Agent responding…** cue; **image attachments**
-  in an anchored two-row "+" menu (photo library — **multi-selection**, up to
-  10 per message — / camera, downscaled to 2048 px / q85, image-only message
-  allowed, gated by the agent's `images` capability). Pending images sit
+  a compact in-turn circular **Agent responding…** cue; **image and file attachments**
+  in an anchored "+" menu (photo library — **multi-selection**, up to
+  10 per message — / camera / document file picker up to 10 MB, attachment-only
+  message allowed, gated by the agent's `images` capability). Pending attachments sit
   **inside** the pill above the field as a 56 dp horizontally scrolling strip
-  with a per-image ✕, and the pill morphs from its stadium ends to a 24 dp
-  rounded surface while they are there; once sent, the same strip (72 dp)
-  renders **above** the user bubble — tap to open the image full size.
+  with a per-item ✕ (images as thumbnails, files as chips), and the pill morphs from
+  its stadium ends to a 24 dp rounded surface while they are there; once sent, the
+  same strip (72 dp) renders **above** the user bubble — tap to open the image full size.
 - **Per-PC threads** (`Thread.deviceId`) with per-agent filter chips, search /
   sort / density, archived-thread screen, per-thread actions (rename / archive /
   unarchive / delete / copy id), **Remove device** (unpair), **Copy thread ID**
@@ -249,18 +249,21 @@ connected to live bridge data, validated on-device against a real bridge.
   throttled by a **configurable interval** (every launch / 6h / 12h / 24h default
   / 48h / weekly / monthly), the installed **current version**, a *Check now*
   action, and an **in-section download → install** flow in **Settings → Updates**
-  (plus the dismissible *Update available* banner on Threads, in sync). Android =
-  Play In-App Update **flexible** flow (background download with real % + in-app
-  install); iOS = App Store version lookup (`dio` iTunes) + StoreKit
-  `SKStoreProductViewController` overlay. Single package `in_app_update_flutter`
-  behind a guarded `AppUpdateService`. A flexible update is **resumable**: the
+  (plus the dismissible *Update available* banner on Threads, in sync). Android
+  supports both Google Play In-App Update **flexible** flow and **direct APK
+  updates** (queried from Bridge LAN `/app/version` or a configured custom update
+  server, downloaded in-app with live progress, prompting with `AppUpdateDialog`,
+  and installed via native Android `FileProvider` + `ACTION_VIEW` package
+  installer); iOS = App Store version lookup (`dio` iTunes) + StoreKit
+  `SKStoreProductViewController` overlay. A flexible update is **resumable**: the
   download outlives the app that starts it, so a check re-reads the stage Play
   reports (`AppUpdateStatus.installStage`) and picks the flow back up — an update
   left downloaded returns as *Install now*, and a pending one bypasses the check
-  interval on every foreground. **Partially device-verified** (Android: the first
-  real Play test exposed the stuck-flow bug now fixed — see `CHANGELOG.md`; the
-  fixed flow still needs a full re-run on a Play build. iOS is inert until the
-  App Store listing exists) — see below.
+  interval on every foreground. **Partially device-verified** (Android Play flow:
+  the first real Play test exposed the stuck-flow bug now fixed — see
+  `CHANGELOG.md`; Direct APK verified across bridge HTTP endpoints and native
+  installer channel. iOS is inert until the App Store listing exists).
+
 - **i18n** — full app translated (EN + ES) via `flutter gen-l10n`.
 
 iOS is **not yet built** (the Podfile is generated on the first macOS build) and is
@@ -322,8 +325,6 @@ shipping.
       Decide it with the app in hand, and re-measure with the recipe in
       [`docs/testing.md`](docs/testing.md).
 - [ ] **Work-log auto-expand while streaming; tap Last-edits strip to jump.** Low.
-- [ ] **Arbitrary (non-image) file attach** — deferred; no bridge contract/model
-      exists for it yet.
 - [ ] **Adopt `freezed`/`json_serializable`** if/when entity boilerplate warrants it.
       Optional.
 
@@ -439,13 +440,8 @@ The following are pending and tracked as assets in `FOR-HUMAN.md`:
       as installable after force-stopping the app; and that killing the app
       mid-download still resumes. The iOS path is inert until the App Store
       listing exists (`FOR-HUMAN.md`).
-- [ ] **APK / GitHub-Releases update channel** (not built) — for users on a
-      sideloaded `.apk` (no Play), poll the GitHub Releases API and show the same
-      banner with a download/install action. `in_app_update_flutter` does **not**
-      cover this channel (it only does Play In-App Updates + the iOS StoreKit
-      path), so it needs its own checker behind the existing `AppUpdateService`
-      seam.
 - [ ] **Settings restructure + update flow — functional validation on device.**
+
       The sectioned settings (General / Workspace / System landing → per-section
       screens, About with the app logo, open-source licenses) and the reworked
       update flow (in-section download → install, configurable interval) pass

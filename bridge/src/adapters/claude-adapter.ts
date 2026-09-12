@@ -483,6 +483,14 @@ export class ClaudeCodeAdapter extends BaseAgentAdapter {
     return this.#sessionByThread.get(threadId);
   }
 
+  /**
+   * Adopt a native session id from disk (bridge restart recovery).
+   */
+  adoptNativeSession(threadId: string, sessionId: string): void {
+    if (!sessionId || this.#sessionByThread.has(threadId)) return;
+    this.#sessionByThread.set(threadId, sessionId);
+  }
+
   constructor(options: ClaudeCodeAdapterOptions = {}) {
     super();
     this.#binaryPath = options.binaryPath ?? 'claude';

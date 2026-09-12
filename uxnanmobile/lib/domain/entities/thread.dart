@@ -24,6 +24,30 @@ class Thread extends Equatable {
     this.createdAt,
   });
 
+  /// Parses a [Thread] from a wire JSON payload.
+  factory Thread.fromJson(Map<String, dynamic> json) {
+    final createdAt = json['createdAt'];
+    final updatedAt = json['updatedAt'] ?? json['lastActivity'];
+    return Thread(
+      id: json['id'] as String,
+      title: json['title'] as String? ?? json['id'] as String,
+      agentId: json['agentId'] as String? ?? 'custom',
+      projectId: json['projectId'] as String?,
+      deviceId: json['deviceId'] as String?,
+      cwd: json['cwd'] as String?,
+      worktreePath: json['worktreePath'] as String?,
+      model: json['model'] as String?,
+      syncState: ThreadSyncState.synced,
+      status: _parseStatus(json['status'] as String?),
+      lastActivity: updatedAt is int
+          ? DateTime.fromMillisecondsSinceEpoch(updatedAt)
+          : null,
+      createdAt: createdAt is int
+          ? DateTime.fromMillisecondsSinceEpoch(createdAt)
+          : null,
+    );
+  }
+
   /// Unique thread identifier.
   final String id;
 
@@ -108,4 +132,11 @@ class Thread extends Equatable {
         createdAt,
         agentId,
       ];
+
+  static ThreadStatus _parseStatus(String? name) {
+    for (final value in ThreadStatus.values) {
+      if (value.name == name) return value;
+    }
+    return ThreadStatus.active;
+  }
 }

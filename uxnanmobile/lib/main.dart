@@ -6,6 +6,9 @@ import 'package:uxnan/app.dart';
 import 'package:uxnan/core/utils/logger.dart';
 import 'package:uxnan/infrastructure/notifications/push_notification_service.dart';
 
+import 'package:uxnan/presentation/providers/application_providers.dart';
+import 'package:uxnan/presentation/providers/update_providers.dart';
+
 /// Application entry point.
 ///
 /// Kept intentionally minimal: it ensures the Flutter binding is ready,
@@ -29,8 +32,13 @@ Future<void> main() async {
   await _initFirebase();
 
   runApp(
-    const ProviderScope(
-      child: UxnanApp(),
+    ProviderScope(
+      overrides: [
+        connectedBridgeHostsProvider.overrideWith(
+          (ref) => ref.watch(activeBridgeHostsProvider),
+        ),
+      ],
+      child: const UxnanApp(),
     ),
   );
 }

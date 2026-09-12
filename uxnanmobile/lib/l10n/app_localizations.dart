@@ -1472,6 +1472,12 @@ abstract class AppLocalizations {
   /// **'Rename'**
   String get threadActionRename;
 
+  /// Action sheet item to create a new conversation with the same agent and model configuration.
+  ///
+  /// In en, this message translates to:
+  /// **'New with same config'**
+  String get threadActionNewWithSameConfig;
+
   /// No description provided for @threadActionCopyId.
   ///
   /// In en, this message translates to:
@@ -1736,17 +1742,29 @@ abstract class AppLocalizations {
   /// **'Take a photo'**
   String get composerAttachCamera;
 
+  /// No description provided for @composerAttachFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Document / file'**
+  String get composerAttachFile;
+
   /// No description provided for @composerAttachFailed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t attach that image'**
   String get composerAttachFailed;
 
-  /// Snackbar shown when the pending-attachment queue is full (images ride inline on the turn, so the count is bounded).
+  /// Snackbar shown when the pending-attachment queue is full.
   ///
   /// In en, this message translates to:
-  /// **'You can attach up to {count} images per message'**
+  /// **'You can attach up to {count} attachments per message'**
   String composerAttachLimit(int count);
+
+  /// Snackbar shown when a chosen file exceeds the size limit.
+  ///
+  /// In en, this message translates to:
+  /// **'File size exceeds limit (max {limit} MB)'**
+  String composerAttachFileSizeLimit(int limit);
 
   /// Accessibility label of an attachment thumbnail, in the composer and above a sent message.
   ///
@@ -5257,6 +5275,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t load the licenses.'**
   String get licensesError;
+
+  /// Title of the custom update server settings tile.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom update server'**
+  String get updateCustomServerTitle;
+
+  /// Subtitle of the custom update server settings tile.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct APK server URL or Bridge host'**
+  String get updateCustomServerSubtitle;
+
+  /// Placeholder hint for the custom update server URL input.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. http://192.168.1.5:4040'**
+  String get updateCustomServerHint;
+
+  /// Title of the dialog to configure a custom update server URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Update server URL'**
+  String get updateCustomServerDialogTitle;
+
+  /// Button to clear the custom update server URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to default'**
+  String get updateCustomServerClear;
+
+  /// Button in the update dialog to ignore the current new version.
+  ///
+  /// In en, this message translates to:
+  /// **'Ignore this version'**
+  String get updateDialogIgnoreVersion;
+
+  /// Button in the update dialog to dismiss the dialog while download continues in background.
+  ///
+  /// In en, this message translates to:
+  /// **'Download in background'**
+  String get updateDialogBackgroundAction;
+
+  /// Button in the update dialog to postpone updating.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get updateDialogLaterAction;
 }
 
 class _AppLocalizationsDelegate

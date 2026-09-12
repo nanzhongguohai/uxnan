@@ -29,6 +29,7 @@ sealed class MessageContent {
         AssistantResponseBoundaryContent.fromJson(json),
       CodeContent.typeName => CodeContent.fromJson(json),
       ImageContent.typeName => ImageContent.fromJson(json),
+      FileContent.typeName => FileContent.fromJson(json),
       ToolUseContent.typeName => ToolUseContent.fromJson(json),
       DiffContent.typeName => DiffContent.fromJson(json),
       MermaidContent.typeName => MermaidContent.fromJson(json),
@@ -336,6 +337,65 @@ class ImageContent extends MessageContent with EquatableMixin {
 
   @override
   List<Object?> get props => [path, base64Data, mimeType, width, height];
+}
+
+/// A file attachment, either by workspace path or inline base64.
+class FileContent extends MessageContent with EquatableMixin {
+  /// Creates a [FileContent].
+  const FileContent({
+    required this.fileName,
+    this.mimeType = 'application/octet-stream',
+    this.path,
+    this.base64Data,
+    this.size,
+  });
+
+  /// Decodes a [FileContent].
+  factory FileContent.fromJson(Map<String, dynamic> json) => FileContent(
+        fileName:
+            json['fileName'] as String? ?? json['name'] as String? ?? 'file',
+        mimeType: json['mimeType'] as String? ?? 'application/octet-stream',
+        path: json['path'] as String?,
+        base64Data: json['base64Data'] as String?,
+        size: json['size'] as int?,
+      );
+
+  /// Original filename.
+  final String fileName;
+
+  /// Workspace path, if any.
+  final String? path;
+
+  /// Inline base64 data, if any.
+  final String? base64Data;
+
+  /// MIME type.
+  final String mimeType;
+
+  /// File size in bytes, if known.
+  final int? size;
+
+  /// Wire type discriminator.
+  static const String typeName = 'file';
+
+  @override
+  String get type => typeName;
+
+  @override
+  String get asPlainText => '[file: $fileName]';
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': typeName,
+        'fileName': fileName,
+        'mimeType': mimeType,
+        if (path != null) 'path': path,
+        if (base64Data != null) 'base64Data': base64Data,
+        if (size != null) 'size': size,
+      };
+
+  @override
+  List<Object?> get props => [fileName, path, base64Data, mimeType, size];
 }
 
 /// An agent tool invocation and its result.

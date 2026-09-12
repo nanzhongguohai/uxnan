@@ -6,10 +6,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [Unreleased]
 ### Added
 
+- **App version check and APK download HTTP endpoints.** `LanServer` exposes
+  `GET /app/version` (returning app version, build code, download URL, file size,
+  and release notes) and `GET /app/download` (streaming the release APK with
+  `application/vnd.android.package-archive` and `Content-Disposition`), allowing
+  connected mobile clients to detect newer releases and perform direct in-app updates.
+- **Multi-client real-time thread synchronization notifications.** Thread lifecycle
+  handlers (`thread/start`, `thread/rename`, `thread/archive`, `thread/unarchive`,
+  and `thread/delete`) in `thread-context-handler.ts` now broadcast their corresponding
+  streaming notifications (`stream/thread/started`, `stream/thread/renamed`,
+  `stream/thread/archived`, `stream/thread/unarchived`, `stream/thread/deleted`)
+  to all connected clients, allowing multiple devices connected to the same bridge
+  daemon to stay synchronized in real time without manual reloads.
+- **File attachment delivery to agents.** Bridge now accepts generic file
+  attachments (`type: 'file'`, `fileName`) alongside images on `turn/send`.
+  `materializeAttachments` preserves the original file name and extension when
+  writing files to `.uxnan-attachments/<turnId>/`, and appends an appropriate
+  prompt directive (`[Attached file(s) (inspect/read with your file tools): ...]`)
+  so agents can read and analyze logs, code, configs, and documents using their
+  native file inspection tools.
 - **Antigravity token usage reporting.** Driving `agy` over `--output-format stream-json`
+
   exposes the native `result.usage` payload (`input_tokens`, `output_tokens`,
   `thinking_tokens`, `cache_read_tokens`, `total_tokens`), so Antigravity now
   advertises `reportsContextUsage: true` and turns report context usage.
+
+### Fixed
+
+- **Native session adoption across bridge restarts.** `AntigravityAdapter`, `PiAdapter`,
+  `ClaudeCodeAdapter`, `OpenCodeAdapter`, `GrokAdapter`, and `ZeroAdapter` now implement
+  `adoptNativeSession(threadId, sessionId)`, matching `CodexAdapter`. When the bridge daemon
+  restarts, `AgentManager` restores persisted agent session ids from disk so existing
+  conversations maintain their backend CLI contexts across restarts without minting fresh empty sessions.
 
 ### Changed
 
@@ -33,6 +61,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
   with each new interaction automatically refreshing the countdown. Active sessions
   are also immediately dismantled when a thread is deleted (`thread/delete`) or
   archived (`thread/archive`), freeing backend memory instantly.
+
+### Fixed
+
+- **Codex cross-thread turn serialization.** Added a mutex (`#turnLockHeld` + `#turnWaiters`) to serialize turns across all threads in `CodexAdapter`. Because the underlying `codex app-server` streaming events (`item/agentMessage/delta`, `item/completed`) lack a `threadId` or bridge `turnId`, running turns concurrently across multiple threads caused deltas to be mistakenly routed to whichever thread appeared first in `#active`. Serializing turns guarantees a single-turn invariant on the shared app-server and eliminates cross-session contamination.
 
 ## [0.0.24-alpha.20260903] - 20260903
 ### Changed

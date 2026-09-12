@@ -23,15 +23,19 @@ import 'package:uxnan/presentation/widgets/ux_icon.dart';
 class ImageThumbStrip extends StatelessWidget {
   /// Creates an [ImageThumbStrip].
   const ImageThumbStrip({
-    required this.images,
     required this.size,
+    this.images = const [],
+    this.attachments,
     this.onRemove,
     this.onTap,
     super.key,
   });
 
-  /// The images to show, in order.
+  /// The images to show, in order (when attachments is not passed).
   final List<ImageContent> images;
+
+  /// The mixed attachments (images and files) to show, in order.
+  final List<MessageContent>? attachments;
 
   /// Side of each square thumbnail, in logical pixels. Each caller states it
   /// explicitly: pending attachments are smaller than sent ones.
@@ -43,9 +47,12 @@ class ImageThumbStrip extends StatelessWidget {
   /// Called with the tapped index. When null the thumbnails are not tappable.
   final ValueChanged<int>? onTap;
 
+  List<MessageContent> get _items => attachments ?? images;
+
   @override
   Widget build(BuildContext context) {
-    if (images.isEmpty) return const SizedBox.shrink();
+    final items = _items;
+    if (items.isEmpty) return const SizedBox.shrink();
     return SizedBox(
       height: size,
       child: ListView.separated(
@@ -54,14 +61,27 @@ class ImageThumbStrip extends StatelessWidget {
         // right-aligned); a tight width still fills and scrolls (composer).
         shrinkWrap: true,
         padding: EdgeInsets.zero,
-        itemCount: images.length,
+        itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(width: UxnanSpacing.xs),
-        itemBuilder: (context, index) => _Thumb(
-          image: images[index],
-          size: size,
-          onRemove: onRemove == null ? null : () => onRemove!(index),
-          onTap: onTap == null ? null : () => onTap!(index),
-        ),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          if (item is FileContent) {
+            return _FileChip(
+              file: item,
+              height: size,
+              onRemove: onRemove == null ? null : () => onRemove!(index),
+            );
+          }
+          if (item is ImageContent) {
+            return _Thumb(
+              image: item,
+              size: size,
+              onRemove: onRemove == null ? null : () => onRemove!(index),
+              onTap: onTap == null ? null : () => onTap!(index),
+            );
+          }
+          return const SizedBox.shrink();
+        },
       ),
     );
   }
@@ -191,6 +211,100 @@ class _ThumbState extends State<_Thumb> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _FileChip extends StatelessWidget {
+  const _FileChip({
+    required this.file,
+    required this.height,
+    this.onRemove,
+  });
+
+  final FileContent file;
+  final double height;
+  final VoidCallback? onRemove;
+
+  String _formatSize(int? bytes) {
+    if (bytes == null) return '';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final l10n = AppLocalizations.of(context);
+    const radius = BorderRadius.all(UxnanRadius.md);
+    final sizeText = _formatSize(file.size);
+
+    return Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: UxnanSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: radius,
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          UxIcon(
+            UxIcons.description,
+            size: 18,
+            color: colors.primary,
+          ),
+          const SizedBox(width: UxnanSpacing.xs),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 150),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  file.fileName,
+                  style: textTheme.labelMedium?.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (sizeText.isNotEmpty)
+                  Text(
+                    sizeText,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+                    maxLines: 1,
+                  ),
+              ],
+            ),
+          ),
+          if (onRemove != null) ...[
+            const SizedBox(width: UxnanSpacing.xs),
+            Tooltip(
+              message: l10n.attachmentRemove,
+              child: InkResponse(
+                onTap: onRemove,
+                radius: UxnanSpacing.md,
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: UxIcon(
+                    UxIcons.close,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

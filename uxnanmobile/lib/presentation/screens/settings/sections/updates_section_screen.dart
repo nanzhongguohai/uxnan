@@ -7,6 +7,7 @@ import 'package:uxnan/presentation/providers/app_info_provider.dart';
 import 'package:uxnan/presentation/providers/update_providers.dart';
 import 'package:uxnan/presentation/theme/icons.dart';
 import 'package:uxnan/presentation/theme/spacing.dart';
+import 'package:uxnan/presentation/widgets/app_update_dialog.dart';
 import 'package:uxnan/presentation/widgets/expressive_card.dart';
 import 'package:uxnan/presentation/widgets/expressive_progress.dart';
 import 'package:uxnan/presentation/widgets/ne_entrance_scope.dart';
@@ -62,6 +63,8 @@ class UpdatesSectionScreen extends ConsumerWidget {
               const _UpdateStateCard(),
               NeSectionHeader(label: l10n.updateIntervalSectionTitle),
               const _IntervalSelector(),
+              NeSectionHeader(label: l10n.updateCustomServerTitle),
+              const _CustomServerCard(),
             ]),
           ),
         ),
@@ -133,6 +136,7 @@ class _UpdateStateCard extends ConsumerWidget {
         title: Text(l10n.updateCheckTitle),
         subtitle: Text(subtitle),
         trailing: trailing,
+        onTap: state.hasUpdate ? () => AppUpdateDialog.show(context) : null,
       ),
     );
   }
@@ -260,4 +264,90 @@ class _IntervalSelector extends ConsumerWidget {
         UpdateCheckInterval.weekly => l10n.updateIntervalWeekly,
         UpdateCheckInterval.monthly => l10n.updateIntervalMonthly,
       };
+}
+
+/// A card allowing the user to configure a custom APK update server URL or
+/// Bridge host.
+class _CustomServerCard extends ConsumerWidget {
+  const _CustomServerCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final colors = Theme.of(context).colorScheme;
+    final state = ref.watch(appUpdateControllerProvider);
+    final customUrl = state.customUpdateUrl;
+
+    return ExpressiveCard(
+      color: colors.surfaceContainer,
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        leading: UxIcon(
+          UxIcons.cloud,
+          color: colors.onSurfaceVariant,
+        ),
+        title: Text(l10n.updateCustomServerTitle),
+        subtitle: Text(
+          customUrl == null || customUrl.isEmpty
+              ? l10n.updateCustomServerSubtitle
+              : customUrl,
+        ),
+        trailing: UxIcon(
+          UxIcons.chevronRight,
+          color: colors.onSurfaceVariant,
+        ),
+        onTap: () => _editServerUrl(context, ref, customUrl),
+      ),
+    );
+  }
+
+  Future<void> _editServerUrl(
+    BuildContext context,
+    WidgetRef ref,
+    String? currentUrl,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController(text: currentUrl ?? '');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.updateCustomServerDialogTitle),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: l10n.updateCustomServerHint,
+            border: const OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.url,
+        ),
+        actions: [
+          if (currentUrl != null && currentUrl.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                controller.clear();
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: Text(l10n.updateCustomServerClear),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.actionCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.actionSave),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed ?? false) {
+      final text = controller.text.trim();
+      final newUrl = text.isEmpty ? null : text;
+      await ref
+          .read(appUpdateControllerProvider.notifier)
+          .setCustomUpdateUrl(newUrl);
+    }
+  }
 }

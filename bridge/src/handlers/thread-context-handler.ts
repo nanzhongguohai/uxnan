@@ -5,16 +5,24 @@
  *
  * Source: architecture/02a-system-architecture.md §5.8.8.
  */
-import { JsonRpcErrorCode, RpcError } from '@uxnan/shared';
-import type {
-  AccessMode,
-  AgentCommandInvocation,
-  AgentId,
-  ApprovalDecision,
-  ApprovalResponse,
-  QuestionResponse,
-  TurnAttachment,
-  TurnList,
+import {
+  JsonRpcErrorCode,
+  RpcError,
+  makeNotification,
+  StreamNotification,
+  type AccessMode,
+  type AgentCommandInvocation,
+  type AgentId,
+  type ApprovalDecision,
+  type ApprovalResponse,
+  type QuestionResponse,
+  type ThreadArchivedParams,
+  type ThreadDeletedParams,
+  type ThreadRenamedParams,
+  type ThreadStartedParams,
+  type ThreadUnarchivedParams,
+  type TurnAttachment,
+  type TurnList,
 } from '@uxnan/shared';
 import type { BridgeContext } from '../bridge-context.js';
 import type { HandlerRouter } from '../handler-router.js';
@@ -28,7 +36,7 @@ export function registerThreadHandlers(router: HandlerRouter): void {
   router.register('thread/read', (p, ctx: BridgeContext) =>
     ctx.threadStore.getThread(requireString(p, 'threadId')),
   );
-  router.register('thread/start', (p, ctx: BridgeContext) => {
+  router.register('thread/start', async (p, ctx: BridgeContext) => {
     const projectId = requireString(p, 'projectId');
     // The phone provides the cwd (e.g. a folder-browser directory, which
     // `project/resolve` SYNTHESIZES into a project that is NOT in
@@ -51,7 +59,7 @@ export function registerThreadHandlers(router: HandlerRouter): void {
     }
     const explicitModel = optionalString(p, 'model');
     const model = explicitModel ?? (pin && agentId === pin.agentId ? pin.model : undefined);
-    return ctx.threadStore.startThread(
+    const thread = await ctx.threadStore.startThread(
       {
         projectId,
         ...(optionalString(p, 'title') !== undefined ? { title: optionalString(p, 'title') } : {}),
@@ -61,6 +69,12 @@ export function registerThreadHandlers(router: HandlerRouter): void {
       },
       ctx.now(),
     );
+    ctx.sessionRegistry.broadcast(
+      makeNotification(StreamNotification.ThreadStarted, {
+        thread,
+      } satisfies ThreadStartedParams),
+    );
+    return thread;
   });
   router.register('thread/resume', (p, ctx: BridgeContext) =>
     ctx.threadStore.resumeThread(requireString(p, 'threadId'), ctx.now()),
@@ -76,17 +90,20 @@ export function registerThreadHandlers(router: HandlerRouter): void {
     );
     return null;
   });
-  router.register('thread/rename', (p, ctx: BridgeContext) =>
-    ctx.threadStore.renameThread(
-      requireString(p, 'threadId'),
-      requireString(p, 'title'),
-      ctx.now(),
-      // Only a client's own auto-naming may declare itself provisional; anything
-      // else is a hand-rename, and that name is final. `'agent'` is deliberately
-      // not accepted from the wire — the bridge writes those when it generates one.
-      optionalString(p, 'source') === 'prompt' ? 'prompt' : 'user',
-    ),
-  );
+  router.register('thread/rename', async (p, ctx: BridgeContext) => {
+    const threadId = requireString(p, 'threadId');
+    const title = requireString(p, 'title');
+    const source = optionalString(p, 'source') === 'prompt' ? 'prompt' : 'user';
+    const renamed = await ctx.threadStore.renameThread(threadId, title, ctx.now(), source);
+    ctx.sessionRegistry.broadcast(
+      makeNotification(StreamNotification.ThreadRenamed, {
+        threadId,
+        title: renamed.title,
+        titleSource: renamed.titleSource ?? 'user',
+      } satisfies ThreadRenamedParams),
+    );
+    return renamed;
+  });
   router.register('thread/setAccessMode', (p, ctx: BridgeContext) =>
     ctx.threadStore.setAccessMode(
       requireString(p, 'threadId'),
@@ -97,15 +114,33 @@ export function registerThreadHandlers(router: HandlerRouter): void {
   router.register('thread/archive', async (p, ctx: BridgeContext) => {
     const threadId = requireString(p, 'threadId');
     await ctx.agentManager.closeThreadSession(threadId);
-    return ctx.threadStore.archiveThread(threadId, ctx.now());
+    const archived = await ctx.threadStore.archiveThread(threadId, ctx.now());
+    ctx.sessionRegistry.broadcast(
+      makeNotification(StreamNotification.ThreadArchived, {
+        threadId,
+      } satisfies ThreadArchivedParams),
+    );
+    return archived;
   });
-  router.register('thread/unarchive', (p, ctx: BridgeContext) =>
-    ctx.threadStore.unarchiveThread(requireString(p, 'threadId'), ctx.now()),
-  );
+  router.register('thread/unarchive', async (p, ctx: BridgeContext) => {
+    const threadId = requireString(p, 'threadId');
+    const unarchived = await ctx.threadStore.unarchiveThread(threadId, ctx.now());
+    ctx.sessionRegistry.broadcast(
+      makeNotification(StreamNotification.ThreadUnarchived, {
+        threadId,
+      } satisfies ThreadUnarchivedParams),
+    );
+    return unarchived;
+  });
   router.register('thread/delete', async (p, ctx: BridgeContext) => {
     const threadId = requireString(p, 'threadId');
     await ctx.agentManager.closeThreadSession(threadId);
     await ctx.threadStore.deleteThread(threadId);
+    ctx.sessionRegistry.broadcast(
+      makeNotification(StreamNotification.ThreadDeleted, {
+        threadId,
+      } satisfies ThreadDeletedParams),
+    );
     return null;
   });
 
@@ -304,11 +339,20 @@ function optionalAttachments(params: unknown): TurnAttachment[] {
     const base64Data = typeof obj['base64Data'] === 'string' ? obj['base64Data'] : undefined;
     const path = typeof obj['path'] === 'string' ? obj['path'] : undefined;
     if (base64Data === undefined && path === undefined) continue;
-    const att: TurnAttachment = { type: 'image', mimeType };
+    const type = obj['type'] === 'file' ? 'file' : 'image';
+    const att: TurnAttachment = { type, mimeType };
     if (base64Data !== undefined) att.base64Data = base64Data;
     if (path !== undefined) att.path = path;
+    const fileName =
+      typeof obj['fileName'] === 'string'
+        ? obj['fileName']
+        : typeof obj['name'] === 'string'
+          ? obj['name']
+          : undefined;
+    if (fileName !== undefined) att.fileName = fileName;
     if (typeof obj['width'] === 'number') att.width = obj['width'];
     if (typeof obj['height'] === 'number') att.height = obj['height'];
+    if (typeof obj['size'] === 'number') att.size = obj['size'];
     out.push(att);
   }
   return out;

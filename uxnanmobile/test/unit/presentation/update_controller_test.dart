@@ -29,10 +29,18 @@ class _FakeUpdateService extends AppUpdateService {
   int checks = 0;
   int downloads = 0;
   int installs = 0;
+  List<String>? recordedBridgeHosts;
+  String? recordedCustomUrl;
 
   @override
-  Future<AppUpdateStatus> check({String? iosRegionCode}) async {
+  Future<AppUpdateStatus> check({
+    String? iosRegionCode,
+    String? customUrl,
+    List<String>? bridgeHosts,
+  }) async {
     checks++;
+    recordedCustomUrl = customUrl;
+    recordedBridgeHosts = bridgeHosts;
     return result;
   }
 
@@ -372,6 +380,28 @@ void main() {
 
       final store = container.read(updatePreferencesStoreProvider);
       expect(await store.readUpdateStarted(), isFalse);
+    });
+
+    test('forwards connectedBridgeHostsProvider to check', () async {
+      final service = _FakeUpdateService(result: upToDate);
+      final container = ProviderContainer(
+        overrides: [
+          appUpdateServiceProvider.overrideWithValue(service),
+          updatePreferencesStoreProvider.overrideWithValue(
+            UpdatePreferencesStore(
+              preferences: SharedPreferences.getInstance(),
+            ),
+          ),
+          connectedBridgeHostsProvider
+              .overrideWithValue(['192.168.1.100:19850']),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(appUpdateControllerProvider.notifier).check();
+
+      expect(service.checks, 1);
+      expect(service.recordedBridgeHosts, ['192.168.1.100:19850']);
     });
   });
 }

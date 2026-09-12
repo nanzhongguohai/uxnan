@@ -670,10 +670,7 @@ test('PiAdapter cancelTurn sends abort, unsets active turn, and tears down sessi
   await adapter.cancelTurn('t1', 'u1');
   await flush();
 
-  assert.deepEqual(proc.sent, [
-    { type: 'prompt', message: 'long job' },
-    { type: 'abort' },
-  ]);
+  assert.deepEqual(proc.sent, [{ type: 'prompt', message: 'long job' }, { type: 'abort' }]);
   assert.equal(adapter.hasActiveSession('t1'), false);
   const aborted = events.find((e) => e.type === 'turn_aborted');
   assert.notEqual(aborted, undefined);
@@ -741,12 +738,18 @@ test('PiAdapter interaction refreshes the idle timeout countdown', async () => {
 
   // Another 30ms: if timer wasn't refreshed, total time would be 60ms (>50ms) and session would be dead
   await new Promise((r) => setTimeout(r, 30));
-  assert.equal(adapter.hasActiveSession('t1'), true, 'session must still be alive because timer was refreshed');
+  assert.equal(
+    adapter.hasActiveSession('t1'),
+    true,
+    'session must still be alive because timer was refreshed',
+  );
 
   // Wait remaining 30ms to exceed new 50ms window
   await new Promise((r) => setTimeout(r, 35));
-  assert.equal(adapter.hasActiveSession('t1'), false, 'session now dismantled after refreshed timeout expires');
+  assert.equal(
+    adapter.hasActiveSession('t1'),
+    false,
+    'session now dismantled after refreshed timeout expires',
+  );
   await adapter.stop();
 });
-
-
